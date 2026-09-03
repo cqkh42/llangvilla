@@ -1,5 +1,8 @@
 - hosts: all
   tasks: 
-    - name: say hello
-      debug:
-        msg: "hello"
+    - name: Set basic env vars
+      ansible.builtin.lineinfile:
+        path: /etc/environment
+        line: 'ANSIBLE_HOST_PATTERN_MISMATCH=ignore'
+        create: true
+      become: true
