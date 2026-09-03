@@ -1,4 +1,4 @@
-- hosts: optiplex
+- hosts: all
   tasks: 
     - name: say hello
       debug:
