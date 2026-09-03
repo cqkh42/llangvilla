@@ -1,5 +1,4 @@
 - hosts: optiplex
-  connection: local
   tasks: 
     - name: say hello
       debug:
