@@ -1,4 +1,4 @@
-- hosts: localhost
+- hosts: optiplex
   connection: local
   tasks: 
     - name: say hello
