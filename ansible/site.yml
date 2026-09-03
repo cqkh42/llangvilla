@@ -1,0 +1,6 @@
+- hosts: localhost
+  connectionh: local
+  tasks: 
+    - name: say hello
+      debug:
+        msg: "hello"
