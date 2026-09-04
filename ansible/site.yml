@@ -1,4 +1,4 @@
-- hosts: optiplex
+- hosts: localhost
   tasks: 
     - name: Set basic env vars
       ansible.builtin.lineinfile:
