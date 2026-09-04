@@ -1,4 +1,5 @@
-- hosts: all
+- hosts: 
+  - optiplex
   tasks: 
     - name: Set basic env vars
       debug:
