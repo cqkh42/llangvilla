@@ -1,5 +1,5 @@
 - hosts: 
-  - localhost
+  - optiplex
   tasks: 
     - name: Set basic env vars
       debug:
