@@ -4,3 +4,11 @@
     - name: Set basic env vars
       debug:
         msg: hello
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - qemu-kvm
+        state: present
+        update_cache: yes
