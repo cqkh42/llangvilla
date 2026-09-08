@@ -9,6 +9,6 @@
         name:
           - curl
           - git
-          - qemu-kvm
+          - qemu-system-x86
         state: present
         update_cache: yes
