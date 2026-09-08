@@ -22,5 +22,5 @@
     - name: Copy OVMF_VARS_4M.fd template
       ansible.builtin.copy:
         src: /usr/share/OVMF/OVMF_VARS_4M.fd
-        dest: ./OVMF_VARS.fd
+        dest: "/home/jack/OVMF_VARS.fd"
         remote_src: true
