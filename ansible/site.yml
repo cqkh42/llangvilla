@@ -12,3 +12,9 @@
           - qemu-system-x86
         state: present
         update_cache: yes
+    - name: Add jack to the kvm group
+      ansible.builtin.user:
+        name: jack
+        groups: kvm
+        append: true
+      become: true
