@@ -19,8 +19,11 @@
         groups: kvm
         append: true
       become: true
-    - name: Copy OVMF_VARS_4M.fd template
+    - name: Copy OVMF_VARS_4M.fd template to home directory
       ansible.builtin.copy:
         src: /usr/share/OVMF/OVMF_VARS_4M.fd
         dest: "/home/jack/OVMF_VARS.fd"
         remote_src: true
+        owner: jack
+        group: jack
+        mode: '0644'
