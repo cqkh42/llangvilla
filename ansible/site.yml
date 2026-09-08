@@ -10,6 +10,7 @@
           - curl
           - git
           - qemu-system-x86
+          - ovmf
         state: present
         update_cache: yes
     - name: Add jack to the kvm group
@@ -18,3 +19,8 @@
         groups: kvm
         append: true
       become: true
+    - name: Copy OVMF_VARS.fd template
+      ansible.builtin.copy:
+        src: /usr/share/OVMF/OVMF_VARS.fd
+        dest: ./OVMF_VARS.fd
+        remote_src: true
