@@ -28,7 +28,9 @@ jobs:
         run: make install_deps
 
       - name: Validate autoinstall.yml
+        working-directory: subiquity
         run: |
-          ./subiquity/scripts/validate-autoinstall-user-data.py \
+          ./scripts/validate-autoinstall-user-data.py \
             --no-expect-cloudconfig \
-            autoinstall/autoinstall.yml
+            ../autoinstall/autoinstall.yml
+
