@@ -17,7 +17,7 @@ autoinstall:
     username: jack
     hostname: optiplex
     # Generate with: mkpasswd -m sha-512
-    password: ""
+    password: " "
 
   ssh:
     install-server: true
