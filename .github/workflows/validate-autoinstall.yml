@@ -1,0 +1,34 @@
+name: Validate autoinstall config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'autoinstall/autoinstall.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Checkout Subiquity
+        uses: actions/checkout@v4
+        with:
+          repository: canonical/subiquity
+          path: subiquity
+
+      - name: Install Subiquity dependencies
+        working-directory: subiquity
+        run: make install_deps
+
+      - name: Validate autoinstall.yml
+        run: |
+          ./subiquity/scripts/validate-autoinstall-user-data.py \
+            --no-expect-cloudconfig \
+            autoinstall/autoinstall.yml
