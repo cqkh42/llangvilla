@@ -1,0 +1,36 @@
+autoinstall:
+  version: 1
+
+  locale: en_GB.UTF-8
+
+  keyboard:
+    layout: gb
+
+  source:
+    id: ubuntu-desktop-minimal
+
+  storage:
+    layout:
+      name: direct
+
+  identity:
+    username: jack
+    hostname: optiplex
+    # Generate with: mkpasswd -m sha-512
+    password: ""
+
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  codecs:
+    install: true
+
+  drivers:
+    install: false
+
+  packages:
+    - ansible
+    - git
+
+  timezone: Europe/London
