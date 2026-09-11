@@ -27,10 +27,31 @@ jobs:
         working-directory: subiquity
         run: make install_deps
 
+      - name: Seed a fake source catalog
+        run: |
+          sudo mkdir -p /cdrom/casper
+          cat <<'EOF' | sudo tee /cdrom/casper/install-sources.yaml
+          - id: ubuntu-desktop
+            default: true
+            name: {en: Ubuntu Desktop}
+            description: {en: Default}
+            size: 1
+            path: x.squashfs
+            type: fsimage
+            variant: desktop
+          - id: ubuntu-desktop-minimal
+            name: {en: Ubuntu Desktop minimal}
+            description: {en: Minimal}
+            size: 1
+            path: y.squashfs
+            type: fsimage
+            variant: desktop
+          EOF
+
       - name: Validate autoinstall.yml
         working-directory: subiquity
         run: |
           ./scripts/validate-autoinstall-user-data.py \
-            --no-expect-cloudconfig \
+            --no-expect-cloudconfig -vvv \
             ../autoinstall/autoinstall.yml
 
