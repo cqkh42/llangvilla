@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'autoinstall/autoinstall.yml'
+      - 'autoinstall.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
