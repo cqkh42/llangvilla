@@ -19,6 +19,7 @@ autoinstall:
     layout:
       name: direct
   identity:
+    realname: Jack Cooper-McEwan
     username: jack
     hostname: optiplex
     # Generate with: mkpasswd -m sha-512
