@@ -53,5 +53,5 @@ jobs:
         run: |
           ./scripts/validate-autoinstall-user-data.py \
             --no-expect-cloudconfig -vvv \
-            ../autoinstall/autoinstall.yml
+            ../autoinstall/user-data
 
