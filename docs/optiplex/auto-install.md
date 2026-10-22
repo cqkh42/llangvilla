@@ -15,7 +15,7 @@ boot the OptiPlex → unattended install → first-boot `ansible-pull` → runni
 
 - A Linux machine to build on, with `git` and `whois` (for `mkpasswd`)
 - A USB stick, 8 GB or more (it will be wiped)
-- The **Ubuntu 26.04.1 LTS desktop ISO** (see section 2)
+- The **Ubuntu 26.04.1 LTS desktop ISO**, downloaded to `~/Downloads` (see section 2)
 - [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
 - Your Wi-Fi SSID and password
 - An Ubuntu Pro token (optional): <https://ubuntu.com/pro/dashboard>, starts with `C`
@@ -47,8 +47,9 @@ ansible-playbook --syntax-check ansible/site.yml
 ## 2. Get the ISO and check it
 
 Use **Ubuntu 26.04.1 LTS** ("Resolute Raccoon"), desktop, amd64:
-`ubuntu-26.04.1-desktop-amd64.iso`, from <https://ubuntu.com/download/desktop>. Download
-`SHA256SUMS` from the same release folder too.
+`ubuntu-26.04.1-desktop-amd64.iso`, from <https://ubuntu.com/download/desktop>. The rest of
+this doc assumes it's in `~/Downloads`, along with the `SHA256SUMS` file from the same release
+folder.
 
 Why this one: it's the latest LTS, supported until April 2031 (up to ten years with Ubuntu Pro),
 and its desktop installer supports automated installs. The newest release overall is 26.10, but
@@ -61,6 +62,7 @@ Verify the download, then check the source ID in `user-data` exists in the ISO. 
 uses `source: id: ubuntu-desktop-minimal`:
 
 ```bash
+cd ~/Downloads
 sha256sum -c SHA256SUMS --ignore-missing       # expect: ubuntu-26.04.1-desktop-amd64.iso: OK
 7z x -so ubuntu-26.04.1-desktop-amd64.iso casper/install-sources.yaml | grep -n 'id:'
 ```
@@ -91,7 +93,7 @@ Run this from the repo root:
 
 ```bash
 mkdir -p "$V/ISO" "$V/ventoy/script"
-cp ubuntu-26.04.1-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
+cp ~/Downloads/ubuntu-26.04.1-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
 cp autoinstall/user-data "$V/ventoy/script/user-data"
 
 cat > "$V/ventoy/ventoy.json" <<'EOF'
