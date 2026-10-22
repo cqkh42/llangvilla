@@ -15,7 +15,7 @@ boot the OptiPlex → unattended install → first-boot `ansible-pull` → runni
 
 - A Linux machine to build on, with `git` and `whois` (for `mkpasswd`)
 - A USB stick, 8 GB or more (it will be wiped)
-- An **Ubuntu Desktop ISO, 24.04 or newer** (older desktop installers don't support autoinstall)
+- The **Ubuntu 26.04.1 LTS desktop ISO** (see section 2)
 - [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
 - Your Wi-Fi SSID and password
 - An Ubuntu Pro token (optional): <https://ubuntu.com/pro/dashboard>, starts with `C`
@@ -44,13 +44,25 @@ git clone https://github.com/cqkh42/llangvilla.git && cd llangvilla
 ansible-playbook --syntax-check ansible/site.yml
 ```
 
-## 2. Check the ISO matches the template
+## 2. Get the ISO and check it
 
-`user-data` uses `source: id: ubuntu-desktop-minimal`. That ID must exist in the ISO:
+Use **Ubuntu 26.04.1 LTS** ("Resolute Raccoon"), desktop, amd64:
+`ubuntu-26.04.1-desktop-amd64.iso`, from <https://ubuntu.com/download/desktop>. Download
+`SHA256SUMS` from the same release folder too.
+
+Why this one: it's the latest LTS, supported until April 2031 (up to ten years with Ubuntu Pro),
+and its desktop installer supports automated installs. The newest release overall is 26.10, but
+that's an interim release with only about nine months of support. For a daily-driver box that
+rebuilds itself from this repo, the LTS is the safer pick. To use 26.10 instead, download
+`ubuntu-26.10-desktop-amd64.iso` and change the filenames below. Both need at least 6 GB of RAM,
+which the OptiPlex has.
+
+Verify the download, then check the source ID in `user-data` exists in the ISO. The template
+uses `source: id: ubuntu-desktop-minimal`:
 
 ```bash
-sha256sum ubuntu-*-desktop-amd64.iso          # compare with the checksum on ubuntu.com
-7z x -so ubuntu-*-desktop-amd64.iso casper/install-sources.yaml | grep -n 'id:'
+sha256sum -c SHA256SUMS --ignore-missing       # expect: ubuntu-26.04.1-desktop-amd64.iso: OK
+7z x -so ubuntu-26.04.1-desktop-amd64.iso casper/install-sources.yaml | grep -n 'id:'
 ```
 
 If `ubuntu-desktop-minimal` isn't listed, change the `id:` in the template to one that is
@@ -79,7 +91,7 @@ Run this from the repo root:
 
 ```bash
 mkdir -p "$V/ISO" "$V/ventoy/script"
-cp ubuntu-*-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
+cp ubuntu-26.04.1-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
 cp autoinstall/user-data "$V/ventoy/script/user-data"
 
 cat > "$V/ventoy/ventoy.json" <<'EOF'
