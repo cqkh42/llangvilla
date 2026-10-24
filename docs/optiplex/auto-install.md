@@ -48,27 +48,7 @@ ansible-playbook --syntax-check ansible/site.yml
 
 Use **Ubuntu 26.04.1 LTS** ("Resolute Raccoon"), desktop, amd64:
 `ubuntu-26.04.1-desktop-amd64.iso`, from <https://ubuntu.com/download/desktop>. The rest of
-this doc assumes it's in `~/Downloads`, along with the `SHA256SUMS` file from the same release
-folder.
-
-Why this one: it's the latest LTS, supported until April 2031 (up to ten years with Ubuntu Pro),
-and its desktop installer supports automated installs. The newest release overall is 26.10, but
-that's an interim release with only about nine months of support. For a daily-driver box that
-rebuilds itself from this repo, the LTS is the safer pick. To use 26.10 instead, download
-`ubuntu-26.10-desktop-amd64.iso` and change the filenames below. Both need at least 6 GB of RAM,
-which the OptiPlex has.
-
-Verify the download, then check the source ID in `user-data` exists in the ISO. The template
-uses `source: id: ubuntu-desktop-minimal`:
-
-```bash
-cd ~/Downloads
-sha256sum -c SHA256SUMS --ignore-missing       # expect: ubuntu-26.04.1-desktop-amd64.iso: OK
-7z x -so ubuntu-26.04.1-desktop-amd64.iso casper/install-sources.yaml | grep -n 'id:'
-```
-
-If `ubuntu-desktop-minimal` isn't listed, change the `id:` in the template to one that is
-(for example `ubuntu-desktop`).
+this doc assumes it's in `~/Downloads`.
 
 ## 3. Install Ventoy on the stick
 
