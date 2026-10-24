@@ -74,7 +74,8 @@ Run this from the repo root:
 ```bash
 mkdir -p "$V/ISO" "$V/ventoy/script"
 cp ~/Downloads/ubuntu-26.04.1-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
-cp autoinstall/user-data "$V/ventoy/script/user-data"
+curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/user-data \
+  -o "$V/ventoy/script/user-data"
 
 cat > "$V/ventoy/ventoy.json" <<'EOF'
 {
