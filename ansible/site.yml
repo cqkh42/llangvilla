@@ -1,29 +1,8 @@
 - hosts: 
   - optiplex
   tasks: 
-    - name: Set basic env vars
-      debug:
-        msg: hello
-    - name: Install packages
+    - name: Remove gnome initial setup
       ansible.builtin.apt:
-        name:
-          - curl
-          - git
-          - qemu-system-x86
-          - ovmf
-        state: present
-        update_cache: yes
-    - name: Add jack to the kvm group
-      ansible.builtin.user:
-        name: jack
-        groups: kvm
-        append: true
-      become: true
-    - name: Copy OVMF_VARS_4M.fd template to home directory
-      ansible.builtin.copy:
-        src: /usr/share/OVMF/OVMF_VARS_4M.fd
-        dest: "/home/jack/OVMF_VARS.fd"
-        remote_src: true
-        owner: jack
-        group: jack
-        mode: '0644'
+        name: gnome-initial-setup
+        state: absent
+        purge: true
