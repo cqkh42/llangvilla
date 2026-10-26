@@ -24,9 +24,13 @@ autoinstall:
           name: "wl*"
         dhcp4: true
         optional: true
+        networkmanager:
+          name: "__WIFI_SSID__"
         access-points:
           "__WIFI_SSID__":
             password: "__WIFI_PASSWORD__"
+            networkmanager:
+              name: "__WIFI_SSID__"
 
   storage:
     layout:
