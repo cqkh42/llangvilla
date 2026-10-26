@@ -2,7 +2,9 @@
 # Prepares autoinstall/README.md sections 2-3:
 #   - downloads the Ubuntu desktop ISO (verified against Ubuntu's SHA256SUMS)
 #   - downloads + unpacks Ventoy (verified against a pinned SHA-256)
-#   - optionally installs Ventoy onto a USB stick (ERASES the stick)
+#   - optionally builds the whole stick (ERASES it): installs Ventoy, mounts it,
+#     then copies the ISO, ventoy.json and the raw user-data template onto it
+#     (README sections 3-4). Filling in the placeholders (section 5) is still manual.
 #
 # Usage (disk is optional; without it the script only downloads/unpacks):
 #   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb          # "_" fills $0, so the disk is $1
@@ -11,7 +13,10 @@
 #
 # Everything is cached in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
 # Logs go to stderr; the only stdout is two shell-evaluable lines at the very end:
-#   eval "$(bash -c "$(curl -fsSL "$URL")" _ /dev/sdb)"   # sets $ISO and $VENTOY_DIR
+#   eval "$(bash -c "$(curl -fsSL "$URL")" _ /dev/sdb)"   # sets $ISO, $VENTOY_DIR and $V
+# ($V is the mount point of the freshly made Ventoy partition, if a disk was given.
+#  After installing, the script re-reads the partition table and mounts the stick,
+#  so there is no need to unplug and replug it.)
 set -euo pipefail
 
 # Send all stdout (ours and every child process's) to stderr, keeping the real
@@ -30,6 +35,8 @@ VENTOY_VERSION="1.1.16"
 VENTOY_SHA256="a9ffd7bd5e26df486cafff924b8dbcb6caae20cbe2b179a009fe59ae740c7572"
 VENTOY_TARBALL="ventoy-${VENTOY_VERSION}-linux.tar.gz"
 VENTOY_URL="https://github.com/ventoy/Ventoy/releases/download/v${VENTOY_VERSION}/${VENTOY_TARBALL}"
+
+USER_DATA_URL="https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/user-data"
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/llangvilla"
 ISO_PATH="${CACHE_DIR}/${ISO_NAME}"
@@ -65,6 +72,9 @@ USAGE
 # ---------- arguments ----------
 DISK="${DISK:-}"
 VENTOY_FLAG="-i"
+VENTOY_MOUNT=""
+VENTOY_PART=""
+STICK_POPULATED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -f|--force) VENTOY_FLAG="-I" ;;
@@ -152,6 +162,78 @@ confirm_wipe() {
   [[ "$answer" == "$disk" ]] || die "Input did not match, nothing was changed"
 }
 
+# Re-read the partition table and mount the big Ventoy partition, so the next
+# step works without unplugging the stick. Sets VENTOY_MOUNT on success.
+mount_ventoy() {
+  local disk=$1 part="" mnt="" i
+  sync
+  sudo partprobe "$disk" || warn "partprobe failed, carrying on"
+  udevadm settle || true
+
+  # Find this disk's Ventoy partition (give udev a few seconds to create it)
+  for i in {1..20}; do
+    part=$(lsblk -nrpo NAME,LABEL "$disk" | awk '$2 == "Ventoy" {print $1}')
+    part=${part%%$'\n'*}
+    if [[ -n "$part" ]]; then break; fi
+    sleep 0.5
+  done
+  [[ -n "$part" ]] || { warn "Ventoy partition did not appear"; return 1; }
+
+  # The desktop may already have auto-mounted it
+  mnt=$(findmnt -n -o TARGET -S "$part" 2>/dev/null || true)
+  mnt=${mnt%%$'\n'*}
+  if [[ -z "$mnt" ]]; then
+    command -v udisksctl >/dev/null || { warn "udisksctl not found"; return 1; }
+    info "Mounting ${part}"
+    udisksctl mount -b "$part" >/dev/null || { warn "Could not mount ${part}"; return 1; }
+    mnt=$(findmnt -n -o TARGET -S "$part" 2>/dev/null || true)
+    mnt=${mnt%%$'\n'*}
+  fi
+  [[ -n "$mnt" ]] || { warn "Could not work out where ${part} is mounted"; return 1; }
+
+  VENTOY_PART=$part
+  VENTOY_MOUNT=$mnt
+  ok "Ventoy partition ${part} mounted at ${mnt}"
+}
+
+# README section 4: put the ISO, ventoy.json and the raw user-data on the stick.
+populate_stick() {
+  local v=$1
+  local iso_dest="${v}/ISO/ubuntu-desktop.iso"
+  local ud_dest="${v}/ventoy/script/user-data"
+  mkdir -p "${v}/ISO" "${v}/ventoy/script"
+
+  info "Copying ISO ($(du -h "$ISO_PATH" | cut -f1), this can take a few minutes)..."
+  if command -v rsync >/dev/null; then
+    rsync --no-perms --no-owner --no-group --info=progress2 "$ISO_PATH" "$iso_dest" \
+      || die "Copying the ISO to the stick failed"
+  else
+    cp "$ISO_PATH" "$iso_dest" || die "Copying the ISO to the stick failed"
+  fi
+  info "Flushing to the stick..."
+  sync
+  [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]] \
+    || die "Copied ISO is a different size from the original"
+  ok "ISO copied to ${iso_dest}"
+
+  info "Fetching the user-data template"
+  curl -fsSL "$USER_DATA_URL" -o "$ud_dest" || die "Could not download ${USER_DATA_URL}"
+  ok "user-data copied to ${ud_dest}"
+
+  cat > "${v}/ventoy/ventoy.json" <<'JSON'
+{
+  "auto_install": [
+    {
+      "image": "/ISO/ubuntu-desktop.iso",
+      "template": "/ventoy/script/user-data"
+    }
+  ]
+}
+JSON
+  ok "ventoy.json written"
+  STICK_POPULATED=1
+}
+
 install_ventoy() {
   local disk=$1
   confirm_wipe "$disk"
@@ -162,12 +244,13 @@ install_ventoy() {
     || die "Ventoy install failed. If the stick already has Ventoy, re-run with --force"
   ok "Ventoy installed"
 
-  step "Unmounting"
-  sync
-  udevadm settle || true
-  sleep 2   # give the desktop a moment to auto-mount the new partitions
-  unmount_disk "$disk"
-  ok "Done. Unplug and replug the stick before copying files onto it (README section 4)"
+  step "Mounting the stick"
+  if mount_ventoy "$disk"; then
+    step "Copying files onto the stick"
+    populate_stick "$VENTOY_MOUNT"
+  else
+    warn "Could not mount automatically. Unplug and replug the stick, then do README section 4 by hand"
+  fi
 }
 
 # ---------- preflight ----------
@@ -220,9 +303,21 @@ if [[ -n "$DISK" ]]; then install_ventoy "$DISK"; fi
 step "All done"
 ok "ISO:    ${ISO_PATH}"
 ok "Ventoy: ${VENTOY_DIR}"
-if [[ -z "$DISK" ]]; then
-  info "To install Ventoy, re-run with a disk. Find it with:"
+if [[ -n "$VENTOY_MOUNT" ]]; then
+  ok "Stick:  ${VENTOY_MOUNT}"
+fi
+if (( STICK_POPULATED )); then
+  ud="${VENTOY_MOUNT}/ventoy/script/user-data"
+  left=$(grep -c '__[A-Z_]*__' "$ud" || true)
+  warn "${left} lines in user-data still hold placeholders (README section 5):"
+  info "  nano \"${ud}\""
+  info "  grep -n '__' \"${ud}\"    # must print nothing"
+  info "Then flush and unmount:"
+  info "  sync && udisksctl unmount -b ${VENTOY_PART}"
+elif [[ -z "$DISK" ]]; then
+  info "To build the stick, re-run with a disk. Find it with:"
   info "  lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN==\"usb\"'"
 fi
 
 printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO_PATH" "$VENTOY_DIR" >&3
+if [[ -n "$VENTOY_MOUNT" ]]; then printf 'V=%q\n' "$VENTOY_MOUNT" >&3; fi
