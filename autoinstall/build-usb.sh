@@ -9,7 +9,11 @@
 # Usage (disk is optional; without it the script only downloads/unpacks):
 #   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb          # "_" fills $0, so the disk is $1
 #   DISK=/dev/sdb bash -c "$(curl -fsSL "$URL")"       # or via the environment
-#   ... add --force to reinstall over an existing Ventoy (Ventoy2Disk.sh -I)
+#   ... add --force to wipe and reinstall Ventoy (Ventoy2Disk.sh -I)
+#
+# Re-running on a stick that already has Ventoy (from a previous flash) is safe:
+# Ventoy is kept, the ISO is verified and only re-copied if missing or bad,
+# ventoy.json is left alone, and user-data is ALWAYS replaced by a fresh template.
 #
 # Everything is cached in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
 # Logs go to stderr; the only stdout is two shell-evaluable lines at the very end:
@@ -60,9 +64,11 @@ usage() {
   cat <<USAGE
 Usage: fetch-ubuntu-iso.sh [--force] [DISK]
 
-  DISK     whole USB disk to install Ventoy on, e.g. /dev/sdb (or set \$DISK).
+  DISK     whole USB disk to build, e.g. /dev/sdb (or set \$DISK).
            Without it the script only downloads and unpacks.
-  --force  reinstall over an existing Ventoy (Ventoy2Disk.sh -I)
+           If the stick already has Ventoy it is kept (nothing is erased); the
+           ISO is only re-copied if missing or bad, and user-data is always refreshed.
+  --force  wipe the stick and reinstall Ventoy (Ventoy2Disk.sh -I)
 
 Find your stick with:
   lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
@@ -72,12 +78,13 @@ USAGE
 # ---------- arguments ----------
 DISK="${DISK:-}"
 VENTOY_FLAG="-i"
+FORCE=0
 VENTOY_MOUNT=""
 VENTOY_PART=""
 STICK_POPULATED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -f|--force) VENTOY_FLAG="-I" ;;
+    -f|--force) FORCE=1; VENTOY_FLAG="-I" ;;
     -h|--help)  usage; exit 0 ;;
     -*)         usage; die "Unknown option: $1" ;;
     *)          DISK="$1" ;;
@@ -162,13 +169,23 @@ confirm_wipe() {
   [[ "$answer" == "$disk" ]] || die "Input did not match, nothing was changed"
 }
 
-# Re-read the partition table and mount the big Ventoy partition, so the next
-# step works without unplugging the stick. Sets VENTOY_MOUNT on success.
+# Does this disk already carry a Ventoy install (both Ventoy partitions)?
+has_ventoy() {
+  local labels
+  labels=$(lsblk -nro LABEL "$1" 2>/dev/null || true)
+  grep -qx 'Ventoy' <<<"$labels" && grep -qx 'VTOYEFI' <<<"$labels"
+}
+
+# Mount the big Ventoy partition. With rescan=1 (right after an install) the
+# partition table is re-read first, so no unplugging is needed.
+# Sets VENTOY_PART and VENTOY_MOUNT on success.
 mount_ventoy() {
-  local disk=$1 part="" mnt="" i
-  sync
-  sudo partprobe "$disk" || warn "partprobe failed, carrying on"
-  udevadm settle || true
+  local disk=$1 rescan=${2:-1} part="" mnt="" i
+  if (( rescan )); then
+    sync
+    sudo partprobe "$disk" || warn "partprobe failed, carrying on"
+    udevadm settle || true
+  fi
 
   # Find this disk's Ventoy partition (give udev a few seconds to create it)
   for i in {1..20}; do
@@ -196,31 +213,63 @@ mount_ventoy() {
   ok "Ventoy partition ${part} mounted at ${mnt}"
 }
 
-# README section 4: put the ISO, ventoy.json and the raw user-data on the stick.
+# README section 4, safe to re-run on a stick from a previous flash:
+#   ISO         copied only if missing or not matching the official checksum
+#   ventoy.json written only if missing
+#   user-data   ALWAYS replaced with a fresh template (it is the part that changes)
 populate_stick() {
-  local v=$1
+  local v=$1 need_copy=1
   local iso_dest="${v}/ISO/ubuntu-desktop.iso"
   local ud_dest="${v}/ventoy/script/user-data"
+  local json_dest="${v}/ventoy/ventoy.json"
   mkdir -p "${v}/ISO" "${v}/ventoy/script"
 
-  info "Copying ISO ($(du -h "$ISO_PATH" | cut -f1), this can take a few minutes)..."
-  if command -v rsync >/dev/null; then
-    rsync --no-perms --no-owner --no-group --info=progress2 "$ISO_PATH" "$iso_dest" \
-      || die "Copying the ISO to the stick failed"
-  else
-    cp "$ISO_PATH" "$iso_dest" || die "Copying the ISO to the stick failed"
+  # --- ISO ---
+  if [[ -f "$iso_dest" ]]; then
+    if [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]]; then
+      info "An ISO is already on the stick, verifying (reads the whole file, can take a minute or two)..."
+      if [[ "$(sha256_of "$iso_dest")" == "$iso_sha256" ]]; then
+        need_copy=0
+        ok "ISO on the stick matches the official checksum, not copying"
+      else
+        warn "ISO on the stick has the right size but a bad checksum, replacing it"
+      fi
+    else
+      warn "ISO on the stick is a different size (old release or partial copy), replacing it"
+    fi
   fi
-  info "Flushing to the stick..."
-  sync
-  [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]] \
-    || die "Copied ISO is a different size from the original"
-  ok "ISO copied to ${iso_dest}"
+  if (( need_copy )); then
+    info "Copying ISO ($(du -h "$ISO_PATH" | cut -f1), this can take a few minutes)..."
+    if command -v rsync >/dev/null; then
+      rsync --no-perms --no-owner --no-group --info=progress2 "$ISO_PATH" "$iso_dest" \
+        || die "Copying the ISO to the stick failed"
+    else
+      cp "$ISO_PATH" "$iso_dest" || die "Copying the ISO to the stick failed"
+    fi
+    info "Flushing to the stick..."
+    sync
+    [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]] \
+      || die "Copied ISO is a different size from the original"
+    ok "ISO copied to ${iso_dest}"
+  fi
 
-  info "Fetching the user-data template"
-  curl -fsSL "$USER_DATA_URL" -o "$ud_dest" || die "Could not download ${USER_DATA_URL}"
-  ok "user-data copied to ${ud_dest}"
+  # --- user-data: always replaced. Download first so a failed download
+  #     never destroys the existing copy. ---
+  if [[ -f "$ud_dest" ]]; then
+    info "Replacing the existing user-data with a fresh template"
+  else
+    info "Fetching the user-data template"
+  fi
+  curl -fsSL "$USER_DATA_URL" -o "${ud_dest}.new" \
+    || { rm -f "${ud_dest}.new"; die "Could not download ${USER_DATA_URL} (existing user-data left untouched)"; }
+  mv -f "${ud_dest}.new" "$ud_dest"
+  ok "user-data written to ${ud_dest}"
 
-  cat > "${v}/ventoy/ventoy.json" <<'JSON'
+  # --- ventoy.json: only if missing ---
+  if [[ -f "$json_dest" ]]; then
+    ok "ventoy.json already present, leaving it alone"
+  else
+    cat > "$json_dest" <<'JSON'
 {
   "auto_install": [
     {
@@ -230,7 +279,8 @@ populate_stick() {
   ]
 }
 JSON
-  ok "ventoy.json written"
+    ok "ventoy.json written"
+  fi
   STICK_POPULATED=1
 }
 
@@ -241,12 +291,26 @@ install_ventoy() {
   unmount_disk "$disk"
   info "Running Ventoy2Disk.sh ${VENTOY_FLAG} ${disk} (Ventoy will ask for its own y/n confirmations)"
   (cd "$VENTOY_DIR" && sudo sh Ventoy2Disk.sh "$VENTOY_FLAG" "$disk") \
-    || die "Ventoy install failed. If the stick already has Ventoy, re-run with --force"
+    || die "Ventoy install failed"
   ok "Ventoy installed"
+}
+
+# Install Ventoy if the stick needs it (or --force), then mount it and bring
+# its files up to date.
+build_stick() {
+  local disk=$1 rescan=0
+  if (( FORCE )) || ! has_ventoy "$disk"; then
+    install_ventoy "$disk"
+    rescan=1
+  else
+    step "Ventoy already on ${disk}"
+    ok "Found an existing Ventoy install (version not checked), keeping it"
+    info "Nothing will be erased. Use --force to wipe and reinstall"
+  fi
 
   step "Mounting the stick"
-  if mount_ventoy "$disk"; then
-    step "Copying files onto the stick"
+  if mount_ventoy "$disk" "$rescan"; then
+    step "Updating files on the stick"
     populate_stick "$VENTOY_MOUNT"
   else
     warn "Could not mount automatically. Unplug and replug the stick, then do README section 4 by hand"
@@ -297,7 +361,7 @@ else
 fi
 
 # ---------- install onto the stick (optional) ----------
-if [[ -n "$DISK" ]]; then install_ventoy "$DISK"; fi
+if [[ -n "$DISK" ]]; then build_stick "$DISK"; fi
 
 # ---------- summary ----------
 step "All done"
