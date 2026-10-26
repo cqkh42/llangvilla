@@ -43,12 +43,6 @@ DISK={DISK} bash -c "$(curl -fsSL "$URL")"
 ```
 ## 3. Install Ventoy on the stick
 
-Find the stick's device name **carefully**. Ventoy erases it.
-
-```bash
-sudo sh Ventoy2Disk.sh -i /dev/sdX            # replace sdX; use -I to force a reinstall
-```
-
 Unplug and replug the stick. Two partitions appear, `Ventoy` (big, exFAT) and `VTOYEFI`.
 Everything below goes on the big one. Set `V` to its mount point:
 
