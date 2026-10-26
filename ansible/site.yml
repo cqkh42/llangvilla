@@ -6,3 +6,7 @@
         name: gnome-initial-setup
         state: absent
         purge: true
+    - name: Install basic packages
+      ansible.builtin.apt:
+        name: whoami
+        state: present
