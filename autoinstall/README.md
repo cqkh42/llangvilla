@@ -15,7 +15,6 @@ boot the OptiPlex → unattended install → first-boot `ansible-pull` → runni
 
 1. A Linux machine to build on, with `whois` for `mkpasswd`
 1. A USB stick, 8 GB or more (it will be wiped)
-1. [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
 1. Your Wi-Fi SSID and password
 1. An Ubuntu Pro token (optional): <https://ubuntu.com/pro/dashboard>, starts with `C`
 
