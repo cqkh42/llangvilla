@@ -31,11 +31,13 @@ Placeholders in `user-data`:
 
 ## 2. Get the ISO
 
-Firstly, find the name of the drive you're going to write to with
+Firstly, find the name of the drive you're going to write to with using:
 
 ```bash
 lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
 ```
+
+Then build the USB drive using:
 
 ```bash
 URL=https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/build-usb.sh
