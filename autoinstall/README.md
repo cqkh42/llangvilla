@@ -30,12 +30,13 @@ Placeholders in `user-data`:
 | `__PASSWORD_HASH__` | SHA-512 hash of the `jack` login password (desktop, sudo, SSH) |
 | `__UBUNTU_PRO_TOKEN__` | Ubuntu Pro token (delete the whole `ubuntu-pro:` block to skip Pro) |
 
-## 2. Get the ISO and check it
+## 2. Get the ISO
 
-Use **Ubuntu 26.04.1 LTS** ("Resolute Raccoon"), desktop, amd64:
-`ubuntu-26.04.1-desktop-amd64.iso`, from <https://ubuntu.com/download/desktop>. The rest of
-this doc assumes it's in `~/Downloads`.
+Run 
 
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/fetch-ubuntu-iso.sh)"
+```
 ## 3. Install Ventoy on the stick
 
 Find the stick's device name **carefully**. Ventoy erases it.
