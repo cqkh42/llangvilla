@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Prepares the download-and-unpack parts of autoinstall/README.md:
-#   - the Ubuntu desktop ISO (section 2), verified against Ubuntu's SHA256SUMS
-#   - the Ventoy Linux tarball (section 3), verified against a pinned hash,
-#     then unpacked ready for Ventoy2Disk.sh
+# Prepares autoinstall/README.md sections 2-3:
+#   - downloads the Ubuntu desktop ISO (verified against Ubuntu's SHA256SUMS)
+#   - downloads + unpacks Ventoy (verified against a pinned SHA-256)
+#   - optionally installs Ventoy onto a USB stick (ERASES the stick)
 #
-# Everything lives in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
-# Anything already cached and verified is skipped. Downloads go to a resumable
-# .part file and are only renamed once the checksum passes.
+# Usage (disk is optional; without it the script only downloads/unpacks):
+#   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb          # "_" fills $0, so the disk is $1
+#   DISK=/dev/sdb bash -c "$(curl -fsSL "$URL")"       # or via the environment
+#   ... add --force to reinstall over an existing Ventoy (Ventoy2Disk.sh -I)
 #
-# Logs go to stderr. Stdout is two shell-evaluable lines, so you can do:
-#     eval "$(./fetch-ubuntu-iso.sh)"      # sets $ISO and $VENTOY_DIR
+# Everything is cached in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
+# Logs go to stderr; the only stdout is two shell-evaluable lines at the very end:
+#   eval "$(bash -c "$(curl -fsSL "$URL")" _ /dev/sdb)"   # sets $ISO and $VENTOY_DIR
 set -euo pipefail
+
+# Send all stdout (ours and every child process's) to stderr, keeping the real
+# stdout on fd 3 for the final result. This stops Ventoy's output from being
+# captured by an `eval "$(...)"` wrapper.
+exec 3>&1 1>&2
 
 UBUNTU_VERSION="26.04.1"
 ISO_NAME="ubuntu-${UBUNTU_VERSION}-desktop-amd64.iso"
@@ -36,12 +43,40 @@ if [[ -t 2 ]]; then
 else
   BOLD=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; RESET=""
 fi
-step() { printf '\n%s==> %s%s\n' "$BOLD" "$*" "$RESET" >&2; }
-info() { printf '  %s•%s %s\n' "$BLUE" "$RESET" "$*" >&2; }
-ok()   { printf '  %s✔%s %s\n' "$GREEN" "$RESET" "$*" >&2; }
-warn() { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$*" >&2; }
-die()  { printf '  %s✖%s %s\n' "$RED" "$RESET" "$*" >&2; exit 1; }
+step() { printf '\n%s==> %s%s\n' "$BOLD" "$*" "$RESET"; }
+info() { printf '  %s•%s %s\n' "$BLUE" "$RESET" "$*"; }
+ok()   { printf '  %s✔%s %s\n' "$GREEN" "$RESET" "$*"; }
+warn() { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$*"; }
+die()  { printf '  %s✖%s %s\n' "$RED" "$RESET" "$*"; exit 1; }
 
+usage() {
+  cat <<USAGE
+Usage: fetch-ubuntu-iso.sh [--force] [DISK]
+
+  DISK     whole USB disk to install Ventoy on, e.g. /dev/sdb (or set \$DISK).
+           Without it the script only downloads and unpacks.
+  --force  reinstall over an existing Ventoy (Ventoy2Disk.sh -I)
+
+Find your stick with:
+  lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
+USAGE
+}
+
+# ---------- arguments ----------
+DISK="${DISK:-}"
+VENTOY_FLAG="-i"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f|--force) VENTOY_FLAG="-I" ;;
+    -h|--help)  usage; exit 0 ;;
+    -*)         usage; die "Unknown option: $1" ;;
+    *)          DISK="$1" ;;
+  esac
+  shift
+done
+if [[ -n "$DISK" && "$DISK" != /dev/* ]]; then DISK="/dev/${DISK}"; fi
+
+# ---------- helpers ----------
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 
 # fetch_verified <label> <url> <dest> <expected-sha256>
@@ -75,13 +110,81 @@ fetch_verified() {
   ok "Downloaded and verified ${label}"
 }
 
+# Light sanity checks that the target is a whole, USB-attached, non-system disk.
+validate_disk() {
+  local disk=$1 type tran size_bytes
+  [[ -b "$disk" ]] || die "${disk} is not a block device"
+  type=$(lsblk -dnro TYPE "$disk" 2>/dev/null) || die "lsblk could not inspect ${disk}"
+  [[ "$type" == "disk" ]] \
+    || die "${disk} is a '${type}', not a whole disk (use e.g. /dev/sdb, not /dev/sdb1)"
+  tran=$(lsblk -dnro TRAN "$disk" 2>/dev/null) || die "lsblk could not inspect ${disk}"
+  [[ "$tran" == "usb" ]] \
+    || die "${disk} is not attached over USB (transport: ${tran:-unknown}), refusing"
+  if lsblk -nro MOUNTPOINT "$disk" | grep -qx '/'; then
+    die "${disk} holds the running system, refusing"
+  fi
+  size_bytes=$(lsblk -dnbo SIZE "$disk" 2>/dev/null) || die "lsblk could not inspect ${disk}"
+  if (( size_bytes > 256 * 1000 * 1000 * 1000 )); then
+    warn "${disk} is larger than 256 GB, which is unusual for a USB stick. Double-check it"
+  fi
+  ok "${disk} looks like a USB disk: $(lsblk -dn -o SIZE,MODEL "$disk" | tr -s ' ')"
+}
+
+# Unmount every mounted partition of the disk (desktops auto-mount USB sticks).
+unmount_disk() {
+  local disk=$1 part found=0
+  while read -r part; do
+    found=1
+    info "Unmounting ${part}"
+    sudo umount "$part" || die "Could not unmount ${part} (is something using it?)"
+  done < <(lsblk -nrpo NAME,MOUNTPOINT "$disk" | awk 'NF >= 2 {print $1}')
+  if (( found == 0 )); then info "Nothing mounted from ${disk}"; fi
+}
+
+# Show what is on the disk and make the user type its path to proceed.
+confirm_wipe() {
+  local disk=$1 answer
+  step "Confirm: this will ERASE ${disk}"
+  lsblk -p -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT "$disk"
+  printf '\n  %sEverything on this disk will be lost.%s\n' "$RED" "$RESET"
+  printf '  Type the device path (%s) to continue: ' "$disk"
+  if ! read -r answer </dev/tty; then die "No terminal available to confirm"; fi
+  [[ "$answer" == "$disk" ]] || die "Input did not match, nothing was changed"
+}
+
+install_ventoy() {
+  local disk=$1
+  confirm_wipe "$disk"
+  step "Installing Ventoy on ${disk}"
+  unmount_disk "$disk"
+  info "Running Ventoy2Disk.sh ${VENTOY_FLAG} ${disk} (Ventoy will ask for its own y/n confirmations)"
+  (cd "$VENTOY_DIR" && sudo sh Ventoy2Disk.sh "$VENTOY_FLAG" "$disk") \
+    || die "Ventoy install failed. If the stick already has Ventoy, re-run with --force"
+  ok "Ventoy installed"
+
+  step "Unmounting"
+  sync
+  udevadm settle || true
+  sleep 2   # give the desktop a moment to auto-mount the new partitions
+  unmount_disk "$disk"
+  ok "Done. Unplug and replug the stick before copying files onto it (README section 4)"
+}
+
 # ---------- preflight ----------
 step "Preflight"
-for cmd in curl sha256sum awk tar; do
+required=(curl sha256sum awk tar)
+if [[ -n "$DISK" ]]; then required+=(lsblk sudo umount); fi
+for cmd in "${required[@]}"; do
   command -v "$cmd" >/dev/null || die "Missing required command: ${cmd}"
 done
 mkdir -p "$CACHE_DIR"
 info "Cache directory: ${CACHE_DIR}"
+if [[ -n "$DISK" ]]; then
+  info "Target disk: ${DISK}"
+  validate_disk "$DISK"   # fail fast, before any big downloads
+else
+  info "No disk given, will only download and unpack"
+fi
 
 # ---------- Ubuntu ISO ----------
 step "Ubuntu ${UBUNTU_VERSION} desktop ISO"
@@ -110,10 +213,16 @@ else
   ok "Unpacked to ${VENTOY_DIR}"
 fi
 
+# ---------- install onto the stick (optional) ----------
+if [[ -n "$DISK" ]]; then install_ventoy "$DISK"; fi
+
 # ---------- summary ----------
 step "All done"
 ok "ISO:    ${ISO_PATH}"
 ok "Ventoy: ${VENTOY_DIR}"
-info "Next: sudo sh ${VENTOY_DIR}/Ventoy2Disk.sh -i /dev/sdX   (check lsblk first!)"
+if [[ -z "$DISK" ]]; then
+  info "To install Ventoy, re-run with a disk. Find it with:"
+  info "  lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN==\"usb\"'"
+fi
 
-printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO_PATH" "$VENTOY_DIR"
+printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO_PATH" "$VENTOY_DIR" >&3
