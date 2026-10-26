@@ -13,7 +13,7 @@ boot the OptiPlex → unattended install → first-boot `ansible-pull` → runni
 
 ## 0. What you need
 
-- A Linux machine to build on, with `git` and `whois` (for `mkpasswd`)
+- A Linux machine to build on, with `whois` for `mkpasswd`
 - A USB stick, 8 GB or more (it will be wiped)
 - The **Ubuntu 26.04.1 LTS desktop ISO**, downloaded to `~/Downloads` (see section 2)
 - [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
@@ -35,14 +35,6 @@ Placeholders in `user-data`:
 | `__WIFI_PASSWORD__` | Wi-Fi password |
 | `__PASSWORD_HASH__` | SHA-512 hash of the `jack` login password (desktop, sudo, SSH) |
 | `__UBUNTU_PRO_TOKEN__` | Ubuntu Pro token (delete the whole `ubuntu-pro:` block to skip Pro) |
-
-Check the playbook before building anything. A broken `site.yml` means the first-boot service
-retries forever:
-
-```bash
-git clone https://github.com/cqkh42/llangvilla.git && cd llangvilla
-ansible-playbook --syntax-check ansible/site.yml
-```
 
 ## 2. Get the ISO and check it
 
