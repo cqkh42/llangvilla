@@ -29,7 +29,7 @@ Placeholders in `user-data`:
 | `__PASSWORD_HASH__` | SHA-512 hash of the `jack` login password (desktop, sudo, SSH) |
 | `__UBUNTU_PRO_TOKEN__` | Ubuntu Pro token (delete the whole `ubuntu-pro:` block to skip Pro) |
 
-## 2. Get the ISO
+## 2. Flash The USB
 
 Firstly, find the name of the drive you're going to write to with using:
 
@@ -43,38 +43,8 @@ Then build the USB drive using:
 URL=https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/build-usb.sh
 DISK={DISK} bash -c "$(curl -fsSL "$URL")"
 ```
-## 3. Install Ventoy on the stick
 
-Unplug and replug the stick. Two partitions appear, `Ventoy` (big, exFAT) and `VTOYEFI`.
-Everything below goes on the big one. Set `V` to its mount point:
-
-```bash
-V=/media/$USER/Ventoy        # adjust to wherever it mounted
-```
-
-## 4. Copy the ISO, Ventoy config and raw user-data onto the stick
-
-Run this from the repo root:
-
-```bash
-mkdir -p "$V/ISO" "$V/ventoy/script"
-cp ~/Downloads/ubuntu-26.04.1-desktop-amd64.iso "$V/ISO/ubuntu-desktop.iso"
-curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/user-data \
-  -o "$V/ventoy/script/user-data"
-
-cat > "$V/ventoy/ventoy.json" <<'EOF'
-{
-  "auto_install": [
-    {
-      "image": "/ISO/ubuntu-desktop.iso",
-      "template": "/ventoy/script/user-data"
-    }
-  ]
-}
-EOF
-```
-
-## 5. Edit the placeholders on the stick
+## 3. Edit the placeholders on the stick
 
 Open the copy **on the stick** (not the one in the repo) in an editor:
 
@@ -105,7 +75,7 @@ grep -n '__' "$V/ventoy/script/user-data"     # must print nothing
 
 Then `sync` and unmount the stick.
 
-## 6. Install on the OptiPlex
+## 4. Install on the OptiPlex
 
 1. **Plug the stick in, power on, and press F12** for the one-time boot menu. Pick the USB stick.
 2. **Secure Boot:** the first time you boot Ventoy with Secure Boot on, a blue MokManager
@@ -122,7 +92,7 @@ Then `sync` and unmount the stick.
 **If the installer reports no disk found:** in the BIOS, set *SATA Operation* to **AHCI**
 (Dell machines sometimes default to RAID/Intel RST, which hides the NVMe drive from Linux).
 
-## 7. Verify the first boot
+## 5. Verify the first boot
 
 The first-boot service waits for the network and retries every 60 seconds until `ansible-pull`
 succeeds. Log in as `jack` with the password you hashed, then:
@@ -142,7 +112,7 @@ sudo rm /var/lib/ansible-pull-firstboot.done
 sudo systemctl start ansible-pull-firstboot
 ```
 
-## 8. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Likely cause and fix |
 |---|---|
@@ -154,7 +124,7 @@ sudo systemctl start ansible-pull-firstboot
 | Pro not attached | Bad or expired token, or no network during install. Run `sudo pro attach <token>` |
 | Installer logs | `/var/log/installer/` on the installed system. These contain the filled-in values, so don't share them |
 
-## 9. Housekeeping
+## 7. Housekeeping
 
 - The stick now holds your Wi-Fi password, password hash and Pro token in plain text. Re-format
   it (re-run `Ventoy2Disk.sh -I`) or delete `ventoy/script/user-data` once the install works.
