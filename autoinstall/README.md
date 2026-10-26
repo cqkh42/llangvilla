@@ -1,4 +1,4 @@
-# OptiPlex autoinstall: from repo to running box
+# Ubuntu System Setup
 
 How to turn `autoinstall/user-data` into a Ventoy USB stick, install Ubuntu Desktop
 unattended on the OptiPlex, and end up with a machine that configures itself from this repo.
@@ -13,19 +13,13 @@ boot the OptiPlex → unattended install → first-boot `ansible-pull` → runni
 
 ## 0. What you need
 
-- A Linux machine to build on, with `whois` for `mkpasswd`
-- A USB stick, 8 GB or more (it will be wiped)
-- The **Ubuntu 26.04.1 LTS desktop ISO**, downloaded to `~/Downloads` (see section 2)
-- [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
-- Your Wi-Fi SSID and password
-- An Ubuntu Pro token (optional): <https://ubuntu.com/pro/dashboard>, starts with `C`
+1. A Linux machine to build on, with `whois` for `mkpasswd`
+1. A USB stick, 8 GB or more (it will be wiped)
+1. [Ventoy](https://github.com/ventoy/Ventoy/releases) (Linux tarball)
+1. Your Wi-Fi SSID and password
+1. An Ubuntu Pro token (optional): <https://ubuntu.com/pro/dashboard>, starts with `C`
 
-## 1. What's in the repo
-
-| File | Purpose |
-|---|---|
-| `autoinstall/user-data` | The template. Contains four placeholders, never commit real values |
-| `ansible/site.yml` | The playbook the first-boot `ansible-pull` runs. Must be a valid playbook |
+## 1. Placeholders
 
 Placeholders in `user-data`:
 
