@@ -38,7 +38,8 @@ lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
 ```
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/fetch-ubuntu-iso.sh)"
+URL=https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/fetch-ubuntu-iso.sh
+DISK={DISK} bash -c "$(curl -fsSL "$URL")"
 ```
 ## 3. Install Ventoy on the stick
 
