@@ -31,7 +31,11 @@ Placeholders in `user-data`:
 
 ## 2. Get the ISO
 
-Run 
+Firstly, find the name of the drive you're going to write to with
+
+```bash
+lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
+```
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/fetch-ubuntu-iso.sh)"
@@ -41,8 +45,6 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/h
 Find the stick's device name **carefully**. Ventoy erases it.
 
 ```bash
-lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINT      # the stick shows TRAN=usb, e.g. /dev/sdb
-tar xzf ventoy-*-linux.tar.gz && cd ventoy-*/
 sudo sh Ventoy2Disk.sh -i /dev/sdX            # replace sdX; use -I to force a reinstall
 ```
 
