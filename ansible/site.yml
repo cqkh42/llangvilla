@@ -8,5 +8,5 @@
         purge: true
     - name: Install basic packages
       ansible.builtin.apt:
-        name: whoami
+        name: whois
         state: present
