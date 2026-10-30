@@ -8,5 +8,6 @@
         purge: true
     - name: Install basic packages
       ansible.builtin.apt:
-        name: whois
-        state: present
+        pkg: 
+          - whois
+          - ubuntu-pro-client
