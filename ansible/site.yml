@@ -5,7 +5,8 @@
       community.general.pacman:
         name: plasma-welcome 
         state: absent
-        purge: true
+        force: true
+        remove_nosave: true
     - name: Prevent Plasma Welcome Reinstall
       ansible.builtin.lineinfile:
         path: /etc/pacman.conf
