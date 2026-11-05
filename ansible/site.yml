@@ -1,13 +1,13 @@
 - hosts: 
   - optiplex
   tasks: 
-    - name: Remove gnome initial setup
-      ansible.builtin.apt:
-        name: gnome-initial-setup
+    - name: Remove plasma welcome
+      community.general.pacman:
+        name: plasma-welcome 
         state: absent
         purge: true
-    - name: Install basic packages
-      ansible.builtin.apt:
-        pkg: 
-          - whois
-          - ubuntu-pro-client
+    - name: Prevent Plasma Welcome Reinstall
+      ansible.builtin.lineinfile:
+        path: /etc/pacman.conf
+        regexp: '^#?IgnorePkg'
+        line: 'IgnorePkg = plasma-welcome'
