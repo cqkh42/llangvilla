@@ -24,9 +24,6 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
-
-      [General]
-      ClockEnabled="true"
       
 - name: Configure SDDM greeter (Wayland, remember last user/session)
   ansible.builtin.copy:
@@ -45,8 +42,10 @@
     dest: /usr/share/sddm/themes/catppuccin-mocha-mauve/theme.conf
     mode: "0644"
     content: |
-     # [General]
-     # ClockEnabled="false"
+      [General]
+      ClockEnabled="true"
+      LoginBackground:"true"
+      UserIcon="true"
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
