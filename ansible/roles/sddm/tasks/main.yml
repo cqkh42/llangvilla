@@ -42,7 +42,7 @@
 
 - name: Configure Catpuccin Theme
   ansible.builtin.copy:
-    dest: /usr/share/sddm/themes/catpuccin-mocha-mauve/theme.conf
+    dest: /usr/share/sddm/themes/catppuccin-mocha-mauve/theme.conf
     mode: "0644"
     content: |
       [General]
