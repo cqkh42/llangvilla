@@ -7,4 +7,4 @@
     mode: 0644
   loop:
     - "/usr/share/sddm/faces/jack.face.icon"
-    - "/var/lib/AccountService/icons/jack"
+    - "/var/lib/AccountsService/icons/jack"
