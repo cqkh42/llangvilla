@@ -50,6 +50,11 @@
       LoginBackground="true"
       Background="backgrounds/wall.png"
       UserIcon="true"
+- name: Remove settings button
+  ansible.builtin.lineinfile:
+    path: /usr/share/sddm/themes/catppuccin-mocha-maueve/Components/SessionPanel.qml
+    insertafter: '    id: sessionButton'
+    line: '    visible: false'
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
