@@ -45,8 +45,8 @@
     dest: /usr/share/sddm/themes/catppuccin-mocha-mauve/theme.conf
     mode: "0644"
     content: |
-      [General]
-      ClockEnabled="false"
+     # [General]
+     # ClockEnabled="false"
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
