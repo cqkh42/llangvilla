@@ -166,7 +166,7 @@ say "Found config on $USB_PART (disk $USB_DISK)."
 [[ -f $CFG/autoinstall.env ]] && source "$CFG/autoinstall.env"
 : "${TARGET_DISK:=auto}" "${CONFIRM_SECONDS:=30}" "${WIFI_SSID:=}" "${WIFI_PSK:=}" "${WIFI_HIDDEN:=0}"
 : "${ROOT_FS:=btrfs}" "${ENABLE_SSH:=1}" "${USER_NAME:=}" "${REAL_NAME:=}" "${HOSTNAME_OVERRIDE:=}"
-: "${ANSIBLE_PULL_URL:=}" "${ANSIBLE_PLAYBOOK:=ansible/site.yml}" "${LOCK_ROOT:=1}"
+: "${ANSIBLE_PULL_URL:=}" "${ANSIBLE_PLAYBOOK:=ansible/site.yml}" "${LOCK_ROOT:=1}" "${ANSIBLE_BEFORE_LOGIN:=1}" "${ANSIBLE_REBOOT_AFTER:=1}"
 [[ $ROOT_FS == btrfs || $ROOT_FS == ext4 ]] || die "ROOT_FS must be btrfs or ext4."
 [[ -f $CFG/user_credentials.json ]] || die "$CFG_SUBDIR/user_credentials.json is missing. It holds the user and password."
 
@@ -319,14 +319,28 @@ if [[ -n $USER_NAME && -n $REAL_NAME ]]; then
   CMDS+=("$c")
 fi
 
-# 5d. First-boot ansible-pull (same unit as your Ubuntu late-commands)
+# 5d. First-boot ansible-pull (based on your Ubuntu late-commands unit)
 if [[ -n $ANSIBLE_PULL_URL ]]; then
+  if [[ $ANSIBLE_BEFORE_LOGIN == 1 ]]; then
+    # Run to completion BEFORE the login screen (SDDM) starts. A failure does not
+    # block SDDM; the unit simply tries again on the next boot.
+    UNIT_BEFORE="Before=display-manager.service"
+    UNIT_SERVICE_EXTRA=$'TimeoutStartSec=1800\nStandardOutput=journal+console\nStandardError=journal+console'
+  else
+    # Run in the background while the login screen is already showing; retry every 60 s.
+    UNIT_BEFORE=""
+    UNIT_SERVICE_EXTRA=$'Restart=on-failure\nRestartSec=60'
+  fi
+  # Reboot once after a SUCCESSFUL run. The done-marker is written first, so this can never loop.
+  UNIT_REBOOT=""
+  [[ $ANSIBLE_REBOOT_AFTER == 1 ]] && UNIT_REBOOT="ExecStartPost=/usr/bin/systemctl reboot --no-block"
   CMDS+=("$(cat <<EOF
 cat > /etc/systemd/system/ansible-pull-firstboot.service <<'UNITEOF'
 [Unit]
 Description=Initial ansible-pull
 After=network-online.target
 Wants=network-online.target
+$UNIT_BEFORE
 ConditionPathExists=!/var/lib/ansible-pull-firstboot.done
 
 [Service]
@@ -334,8 +348,8 @@ Type=oneshot
 Environment=HOME=/root
 ExecStart=/usr/bin/ansible-pull -U $ANSIBLE_PULL_URL $ANSIBLE_PLAYBOOK
 ExecStartPost=/usr/bin/touch /var/lib/ansible-pull-firstboot.done
-Restart=on-failure
-RestartSec=60
+$UNIT_REBOOT
+$UNIT_SERVICE_EXTRA
 
 [Install]
 WantedBy=multi-user.target
@@ -706,6 +720,15 @@ LOCK_ROOT=1
 # Leave empty to keep the hostname from the JSON ('optiplex'); set to override per run.
 HOSTNAME_OVERRIDE=''
 
+# 1 = run ansible-pull to completion BEFORE the login screen appears (the screen shows
+#     boot text for a few minutes; if the playbook fails, the login screen starts anyway).
+# 0 = run it in the background after the login screen is up (retries every 60 s).
+ANSIBLE_BEFORE_LOGIN=1
+
+# 1 = reboot once automatically after a successful ansible-pull (so kernel, driver and
+#     display-manager changes take effect). Runs only on success, never loops.
+ANSIBLE_REBOOT_AFTER=1
+
 # First-boot ansible-pull. Empty ANSIBLE_PULL_URL = skip.
 ANSIBLE_PULL_URL='https://github.com/cqkh42/llangvilla.git'
 ANSIBLE_PLAYBOOK='ansible/site.yml'
@@ -802,7 +825,7 @@ If anything failed, read the log the installer saved on the stick: `arch-autoins
 4. The Ventoy menu appears and auto-boots the ISO after 10 seconds.
 5. Watch the first minute: you should see `[autoinstall] TARGET DISK: ...` and the countdown. **Check that disk is the one you want erased.** Press any key to abort.
 6. Walk away. When it says `INSTALL COMPLETE`, the machine powers off.
-7. **Remove the stick**, power on, and you should land on the SDDM login.
+7. **Remove the stick** and power on. If you configured `ansible-pull`, the first boot runs the playbook (console text for a few minutes) and then reboots by itself once. The second boot lands on the SDDM login.
 
 If Ventoy hangs at boot: restart, select the Arch ISO manually and use Ventoy's **GRUB2 mode** (press `F1` in the Ventoy menu for the key combo).
 
@@ -852,11 +875,18 @@ sudo systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
 ### 11b. First-boot `ansible-pull` (built in)
 
-This is now done by `install.sh`, so you no longer hand-edit JSON. Set `ANSIBLE_PULL_URL` and `ANSIBLE_PLAYBOOK` in `autoinstall.env` (section 7b). The script will:
+This is done by `install.sh`, so you don't hand-edit JSON. Set `ANSIBLE_PULL_URL` and `ANSIBLE_PLAYBOOK` in `autoinstall.env` (section 7b). The script will:
 
 - add `git` and `ansible` to the package list,
-- write `/etc/systemd/system/ansible-pull-firstboot.service` (the same unit as your Ubuntu `late-commands`, plus `HOME=/root`),
+- write `/etc/systemd/system/ansible-pull-firstboot.service`,
 - enable it together with `NetworkManager-wait-online.service`, so `network-online.target` genuinely waits for the network.
+
+**When it runs** is controlled by `ANSIBLE_BEFORE_LOGIN`:
+
+- `1` (default): the unit is ordered `Before=display-manager.service`, so SDDM does not start until the playbook has finished. The first boot shows console text for a few minutes, then the login screen appears already customised (SDDM themes and config included). If the playbook fails, SDDM still starts, no "done" marker is written, and the next boot tries again.
+- `0`: it runs in the background while the login screen is already showing, and retries every 60 seconds until it succeeds.
+
+**Reboot after success:** with `ANSIBLE_REBOOT_AFTER=1` (default) the machine reboots once when the playbook finishes successfully. The done marker is written *before* the reboot, so it can't loop, and a failed run never reboots. The sequence is: install, power off, you power on, first boot runs the playbook, automatic reboot, second boot straight to the finished login screen. Set `ANSIBLE_REBOOT_AFTER=0` to skip the reboot. Using the reboot together with `ANSIBLE_BEFORE_LOGIN=0` isn't recommended, since the machine could reboot while someone is already logged in.
 
 Leave `ANSIBLE_PULL_URL` empty to skip it. Read section 15 before relying on it: if your playbook is Ubuntu-specific it will fail on Arch.
 
@@ -893,7 +923,7 @@ The stick installs open-source drivers (nouveau), which gives a working desktop.
 | Installed OS boots straight back to the stick | Remove the stick, or set the internal disk first in firmware boot order. |
 | Installed system has no entry in the boot menu | Firmware lost the entry; boot from `\EFI\BOOT\BOOTX64.EFI` on the internal disk (usually listed as the disk itself) and run `sudo bootctl install`. |
 | Wi-Fi not connected after install | `nmcli device wifi connect 'SSID' password 'PASS'`, and check `sudo ls -l /etc/NetworkManager/system-connections/` (file must be mode 600, owned by root). |
-| First-boot ansible keeps failing | `journalctl -u ansible-pull-firstboot.service -b`. Usually Ubuntu-only tasks (apt, PPAs, snap). See section 15. The unit retries every 60 s until it succeeds, so stop it with `sudo systemctl stop ansible-pull-firstboot.service` while you fix the playbook. |
+| First-boot ansible keeps failing | `journalctl -u ansible-pull-firstboot.service -b`. Usually Ubuntu-only tasks (apt, PPAs, snap). See section 15. With `ANSIBLE_BEFORE_LOGIN=1` it runs once per boot (SDDM starts anyway); with `0` it retries every 60 s until it succeeds, so stop it with `sudo systemctl stop ansible-pull-firstboot.service` while you fix the playbook. |
 | Can't SSH in | `systemctl status sshd`; confirm `ENABLE_SSH=1` and that `openssh` is installed. Arch has no firewall by default, so it's not blocked. Host keys are generated on first start. |
 | Every machine has the same hostname | Expected: one JSON, one hostname. Use `HOSTNAME_OVERRIDE` per run or rename in Ansible. |
 | `user_credentials.json is missing` | The script refuses to run without it (before wiping anything). Generate it as described in section 5c. |
@@ -937,9 +967,9 @@ Don't rename root to `jack` or give `jack` UID 0. It breaks packages and service
 - The Arch `ansible` package includes the common collections. If you ever switch to `ansible-core` you must install `community.general` yourself.
 - Test the playbook on the VM from section 8 before the real machine.
 
-**2. A failing playbook retries forever.** The unit has `Restart=on-failure` and `RestartSec=60`, and the "done" marker is only touched on success. It will rerun every minute until it passes. That is useful, but it means a bad playbook hammers the machine and the network on every boot. Check `journalctl -u ansible-pull-firstboot.service -b`.
+**2. Failure behaviour depends on `ANSIBLE_BEFORE_LOGIN`.** With `1`, a failing playbook is attempted once per boot (SDDM then starts anyway, so you can always log in and read `journalctl -u ansible-pull-firstboot.service -b`). With `0`, the unit retries every 60 seconds until it passes, which can hammer the machine and network. The "done" marker is only written on success.
 
-**3. It runs at boot, before you log in.** The playbook may be mid-way through installing packages while SDDM is already showing. Don't power off until `systemctl status ansible-pull-firstboot.service` shows it finished. Some changes (kernel modules, display manager, groups) need a reboot.
+**3. With `ANSIBLE_BEFORE_LOGIN=1` the first boot is slow.** Expect text on the console, possibly for several minutes (up to 30, then systemd gives up and SDDM starts regardless). Don't power off during it. With `0`, the playbook may be mid-way through installing packages while SDDM is already showing; some changes (kernel modules, display manager, groups) then need a reboot.
 
 **4. The repo must be public.** The unit clones over HTTPS with no credentials. A private repo needs a deploy key or token, which means putting a secret on the machine.
 
@@ -960,6 +990,14 @@ Don't rename root to `jack` or give `jack` UID 0. It breaks packages and service
 **12. First-boot network timing.** The unit waits for `network-online.target`. The script also enables `NetworkManager-wait-online.service`. Without it the playbook can start before Wi-Fi is up and fail its first attempt (it then retries).
 
 **13. Secure Boot and Ventoy.** Same as before: it must be off. Your Ubuntu ISO may have booted with Secure Boot on; Arch will not.
+
+**14. Things a before-login playbook must not do.** The run happens before any user session exists:
+
+- **Don't restart or start `sddm` / `display-manager` from the playbook** (for example in a handler after changing its config). SDDM is waiting for the playbook to finish, so the restart waits for the playbook and the playbook waits for the restart: a deadlock until the 30-minute timeout. Just write the config; SDDM reads it when it starts afterwards. If you must trigger something, use `systemctl restart --no-block`.
+- **No tasks that need a logged-in desktop session** (user dconf, user systemd units, `loginctl`, `kwriteconfig6` against a running session). Writing config files into `/etc` or `/home/jack/.config` is fine; changing live session state isn't.
+- **Don't reboot from the playbook.** The unit reboots once by itself after a successful run (`ANSIBLE_REBOOT_AFTER=1`), so kernel, driver and display-manager changes take effect then. A reboot from inside the playbook would end the run before the done marker is written, and the playbook would run again.
+- **SDDM config goes in `/etc/sddm.conf.d/*.conf`** (themes, default session, autologin). Put a drop-in file there rather than editing `/etc/sddm.conf`.
+- **Alternative to running at boot:** you can run the same `ansible-pull` inside the install itself (a `custom_commands` entry). It finishes before the machine ever boots, but the install environment has no running systemd, so service start/restart tasks fail there. Only choose it if the playbook is purely files and packages.
 
 ## 16. Keeping your repo clean
 
