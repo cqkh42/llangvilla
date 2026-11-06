@@ -1,6 +1,6 @@
 - name: Install SDDM and dependencies
   community.general.pacman:
-    name: [sddm, qt6-svg, qt6-declarative, unzip]
+    name: [sddm, kwin, qt6-wayland, qt6-svg, qt6-declarative, unzip]
     state: present
 
 - name: Download theme zip (verified, skipped if unchanged)
@@ -24,6 +24,17 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
+- name: Configure SDDM greeter (Wayland, remember last user/session)
+  ansible.builtin.copy:
+    dest: /etc/sddm.conf.d/10-wayland.conf
+    mode: "0644"
+    content: |
+      [General]
+      DisplayServer=wayland
+
+      [Users]
+      RememberLastUser=true
+      RememberLastSession=true
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
