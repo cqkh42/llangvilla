@@ -1,7 +1,10 @@
 - name: Install user avatar
   ansible.builtin.copy:
     src: avatar.png
-    dest: /home/jack/.face.icon
+    dest: "{{ item }}"
     owner: jack
     group: jack
     mode: 0644
+  loop:
+    - "/usr/share/sddm/faces/jack.face.icon"
+    - "/var/lib/AccountService/icons/jack"
