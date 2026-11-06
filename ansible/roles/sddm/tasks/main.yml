@@ -24,10 +24,8 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
-
-      [General]
-      LoginBackground=true
-      UserIcon=true
+      UserIcon="true"
+      
 - name: Configure SDDM greeter (Wayland, remember last user/session)
   ansible.builtin.copy:
     dest: /etc/sddm.conf.d/10-wayland.conf
@@ -39,6 +37,19 @@
       [Users]
       RememberLastUser=true
       RememberLastSession=true
+
+- name Configure Catpuccin Theme
+  ansible.builtin.copy:
+    dest: /usr/share/sddm/themes/catpuccin-mocha-mauve/theme.conf
+    mode: "0644"
+    content: |
+      [General]
+      Font="Noto Sans"
+      FontSize=9
+      ClockEnabled="true"
+      LoginBackground="false"
+      Background="backgrounds/wall.png"
+      UserIcon="false"
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
