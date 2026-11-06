@@ -52,7 +52,7 @@
       UserIcon="true"
 - name: Remove settings button
   ansible.builtin.lineinfile:
-    path: /usr/share/sddm/themes/catppuccin-mocha-maueve/Components/SessionPanel.qml
+    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/SessionPanel.qml
     insertafter: '    id: sessionButton'
     line: '    visible: false'
 
