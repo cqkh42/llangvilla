@@ -44,7 +44,7 @@
     content: |
       [General]
       ClockEnabled="true"
-      LoginBackground:"true"
+      LoginBackground:"false"
       UserIcon="true"
 
 - name: Enable SDDM at boot
