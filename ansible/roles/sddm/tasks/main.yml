@@ -58,7 +58,7 @@
 
 - name: Fix user icon bug
   ansible.builtin.lineinfile:
-    path: /user/share/sddm/themes/catppuccin-mocha-mauve/Components/LoginPanel.qml
+    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/LoginPanel.qml
     insertafter: '        source: Qt.resolvedUrl("../assets/defaultIcon.png")'
     line: '        visible: userAvatar.status !== Image.Ready'
 
