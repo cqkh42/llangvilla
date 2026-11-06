@@ -3,25 +3,29 @@ Llangvilla and the home network.
 
 ## Optiplex
 
-### Setup
+### To script
 
-`F2` for BIOS settings
-`F12` for boot settings
+#### Auto install
 
-Start with an ubuntu iso and install it.
+1. deprecate ubunutu
+2. move more things to stand alone scripts
+3. anything we can break out into ansible
+4. actually do it
+5. documentation
+6. move the builder to an arch base
 
-set up a user and things - we can script this
+#### sddm
+1. use conf.d instead
+2. wayland greeter
+3. remember last user & remember last session
+4. cursor theme~/.face.icon
 
-install ansible with
+#### Misc
 
-```bash
-sudo apt update
-sudo apt install software-properties-common -y
-sudo apt-add-repository --yes --update ppa:ansible/ansible
-sudo apt install ansible git -y
-```
-
-
-## Things to install 
-
-7zip
+1. catpuccin kde
+2. headshot
+3. kvantum + catpuccin
+4. papirus icons
+5. catpuccin cursors
+6. add konsole/ wezterm
+7. firefox
