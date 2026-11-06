@@ -24,6 +24,8 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
+
+      [General]
       UserIcon="true"
       
 - name: Configure SDDM greeter (Wayland, remember last user/session)
