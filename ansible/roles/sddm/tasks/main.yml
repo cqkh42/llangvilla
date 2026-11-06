@@ -46,12 +46,7 @@
     mode: "0644"
     content: |
       [General]
-#      Font="Noto Sans"
-#      FontSize=9
       ClockEnabled="false"
-#      LoginBackground="false"
-#      Background="backgrounds/wall.png"
-#      UserIcon="false"
 
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
