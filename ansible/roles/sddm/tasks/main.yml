@@ -1,20 +1,7 @@
----
-# Catppuccin SDDM theme for Arch Linux.
-# Pinned by version + sha256. Bump both together to update.
-# Get the hash with: curl -sL <zip url> | sha256sum
 - name: Catppuccin SDDM
   become: true
 
-  vars:
-    sddm_flavor: mocha
-    sddm_accent: mauve
-    sddm_catppuccin_version: "v1.1.2"        # check github.com/catppuccin/sddm/releases
-    sddm_theme_sha256: "PASTE_SHA256_HERE"
-    sddm_theme_name: "catppuccin-{{ sddm_flavor }}-{{ sddm_accent }}"
-    sddm_theme_url: "https://github.com/catppuccin/sddm/releases/download/{{ sddm_catppuccin_version }}/{{ sddm_theme_name }}-sddm.zip"
-    sddm_theme_zip: "/var/tmp/{{ sddm_theme_name }}-{{ sddm_catppuccin_version }}.zip"
-
-  block:
+  tasks:
     - name: Install SDDM and dependencies
       community.general.pacman:
         name: [sddm, qt6-svg, qt6-declarative, unzip]
