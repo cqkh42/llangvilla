@@ -1,0 +1,7 @@
+- name: Install user avatar
+  ansible.builtin.copy:
+    src: avatar.png
+    dest: /home/jack/.face.icon
+    owner: jack
+    group: jack
+    mode: 0644
