@@ -43,8 +43,12 @@
     mode: "0644"
     content: |
       [General]
+      Font="Noto Sans"
+      FontSize=9
       ClockEnabled="true"
-      LoginBackground:"false"
+      CustomBackground="true"
+      LoginBackground="true"
+      Background="backgrounds/wall.png"
       UserIcon="true"
 
 - name: Enable SDDM at boot
