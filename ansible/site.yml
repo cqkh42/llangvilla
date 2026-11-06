@@ -1,5 +1,8 @@
 - hosts: 
   - optiplex
+  roles:
+    - role: sddm
+      become: true
   tasks: 
     - name: Remove plasma welcome
       community.general.pacman:
