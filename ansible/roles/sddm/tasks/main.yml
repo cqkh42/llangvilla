@@ -62,6 +62,13 @@
     insertafter: '.*?defaultIcon.png.*?'
     line: '        visible: userAvatar.status !== Image.Ready'
 
+- name: name element
+  ansible.builtin.lineinfile:
+    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/LoginPanel.qml
+    insertafter: '.*?AccountsService/icons.*?'
+    line: '        id: userAvatar'
+    
+
 - name: Enable SDDM at boot
   ansible.builtin.systemd:
     name: sddm
