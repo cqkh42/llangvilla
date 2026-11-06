@@ -46,7 +46,7 @@
       Font="Noto Sans"
       FontSize=9
       ClockEnabled="true"
-      CustomBackground="true"
+      CustomBackground="false"
       LoginBackground="true"
       Background="backgrounds/wall.png"
       UserIcon="true"
