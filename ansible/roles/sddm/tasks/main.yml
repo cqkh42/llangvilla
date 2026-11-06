@@ -1,35 +1,32 @@
-- name: Catppuccin SDDM
-  become: true
+tasks:
+  - name: Install SDDM and dependencies
+    community.general.pacman:
+      name: [sddm, qt6-svg, qt6-declarative, unzip]
+      state: present
 
-  tasks:
-    - name: Install SDDM and dependencies
-      community.general.pacman:
-        name: [sddm, qt6-svg, qt6-declarative, unzip]
-        state: present
+  - name: Download theme zip (verified, skipped if unchanged)
+    ansible.builtin.get_url:
+      url: "{{ sddm_theme_url }}"
+      dest: "{{ sddm_theme_zip }}"
+      checksum: "sha256:{{ sddm_theme_sha256 }}"
+      mode: "0644"
+    notify: Unpack SDDM theme
 
-    - name: Download theme zip (verified, skipped if unchanged)
-      ansible.builtin.get_url:
-        url: "{{ sddm_theme_url }}"
-        dest: "{{ sddm_theme_zip }}"
-        checksum: "sha256:{{ sddm_theme_sha256 }}"
-        mode: "0644"
-      notify: Unpack SDDM theme
+  - name: Create SDDM config drop-in directory
+    ansible.builtin.file:
+      path: /etc/sddm.conf.d
+      state: directory
+      mode: "0755"
 
-    - name: Create SDDM config drop-in directory
-      ansible.builtin.file:
-        path: /etc/sddm.conf.d
-        state: directory
-        mode: "0755"
+  - name: Set the SDDM theme
+    ansible.builtin.copy:
+      dest: /etc/sddm.conf.d/10-theme.conf
+      mode: "0644"
+      content: |
+        [Theme]
+        Current={{ sddm_theme_name }}
 
-    - name: Set the SDDM theme
-      ansible.builtin.copy:
-        dest: /etc/sddm.conf.d/10-theme.conf
-        mode: "0644"
-        content: |
-          [Theme]
-          Current={{ sddm_theme_name }}
-
-    - name: Enable SDDM at boot
-      ansible.builtin.systemd:
-        name: sddm
+  - name: Enable SDDM at boot
+    ansible.builtin.systemd:
+      name: sddm
         enabled: true
