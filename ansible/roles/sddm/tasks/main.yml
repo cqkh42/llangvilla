@@ -33,10 +33,3 @@
       ansible.builtin.systemd:
         name: sddm
         enabled: true
-
-  handlers:
-    - name: Unpack SDDM theme
-      ansible.builtin.unarchive:
-        src: "{{ sddm_theme_zip }}"
-        dest: /usr/share/sddm/themes/
-        remote_src: true
