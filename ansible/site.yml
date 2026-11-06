@@ -2,6 +2,7 @@
   - optiplex
   roles:
     - role: sddm
+    - role: setup_user
   tasks: 
     - name: Remove plasma welcome
       community.general.pacman:
