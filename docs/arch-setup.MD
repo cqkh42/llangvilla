@@ -108,6 +108,7 @@ You will create two files here: `install.sh` (runs on the target machine, inside
 ```bash
 cd ~/arch-autoinstall
 curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/main/autoinstall/arch/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/main/autoinstall/arch/build.sh -o build.sh
 ```
 
 ### 3b. `build.sh`
