@@ -99,67 +99,8 @@ Why Docker? The tool that builds Arch ISOs (`archiso`) only runs on Arch. An Arc
 ```bash
 mkdir -p ~/arch-autoinstall/out ~/arch-autoinstall/generated
 cd ~/arch-autoinstall
-```
-
-You will create two files here: `install.sh` (runs on the target machine, inside the ISO) and `build.sh` (runs on your computer, inside Docker, to build the ISO).
-
-### 3a. `install.sh`
-
-```bash
-cd ~/arch-autoinstall
 curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/main/autoinstall/arch/install.sh -o install.sh
 curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/main/autoinstall/arch/build.sh -o build.sh
-```
-
-### 3b. `build.sh`
-
-```bash
-nano ~/arch-autoinstall/build.sh
-```
-
-Paste, save, exit:
-
-```bash
-#!/bin/bash
-# Runs INSIDE an Arch Linux Docker container. Builds the custom ISO.
-set -euo pipefail
-
-pacman -Syu --noconfirm archiso
-
-rm -rf /tmp/profile /tmp/work
-cp -r /usr/share/archiso/configs/releng /tmp/profile
-cd /tmp/profile
-
-# 1. extra packages on the live ISO
-echo "jq" >> packages.x86_64
-
-# 2. our installer script
-install -Dm755 /work/install.sh airootfs/root/install.sh
-sed -i '/^file_permissions=(/a\  ["/root/install.sh"]="0:0:755"' profiledef.sh
-grep -q '/root/install.sh' profiledef.sh
-
-# 3. ISO name
-sed -i 's/^iso_name=.*/iso_name="arch-autoinstall"/' profiledef.sh
-
-# 4. auto-run the installer when root logs in on tty1
-cat >> airootfs/root/.zlogin <<'EOF'
-
-# --- zero-touch install hook ---
-if [[ $(tty) == /dev/tty1 && -z ${AUTOINSTALL_STARTED:-} ]]; then
-    export AUTOINSTALL_STARTED=1
-    /root/install.sh
-fi
-EOF
-
-# 5. build
-mkdir -p /work/out
-mkarchiso -v -w /tmp/work -o /work/out /tmp/profile
-echo "BUILD OK"
-```
-
-Make both scripts executable:
-
-```bash
 chmod +x ~/arch-autoinstall/install.sh ~/arch-autoinstall/build.sh
 ```
 
