@@ -192,45 +192,6 @@ Menu names vary slightly by version. Set these (use the arrow keys, Enter to sel
 4. Check the files exist: `ls -l /root/user_*.json`. You need **both** `user_configuration.json` and `user_credentials.json`.
 5. You can now select **Abort** instead of installing. (Or choose **Install** if you want to test the whole config in the VM now. It downloads a few GB.)
 
-#### If `user_credentials.json` was not written
-
-The credentials file only contains a user and/or root password, and archinstall only writes it when it has something to put in it and you ask for it. Work through these in order:
-
-1. **Make sure a user (or root password) is actually set.** In the menu, **Authentication** must show your user (with sudo) and/or a root password. An empty section means no credentials file.
-2. **Save again, picking the credentials file explicitly.** In **Save configuration**, choose the option for `user_credentials.json` (or "all"), not just `user_configuration.json`, and use `/root` as the folder. If it asks about encrypting it, answer **No**.
-3. **Let the installer write it for you.** In most versions, pressing **Install** makes archinstall write both files to `/var/log/archinstall/` before it starts installing. Press **Install**, wait until you see packages being downloaded, then press `Ctrl+C`. Then:
-
-   ```bash
-   ls -l /var/log/archinstall/
-   cp /var/log/archinstall/user_*.json /root/
-   ```
-
-4. **Check what version you have** (it tells you which key names to expect): `archinstall --version`.
-5. **Last resort: write it by hand.** Generate a password hash (on any machine with OpenSSL):
-
-   ```bash
-   openssl passwd -6
-   ```
-
-   Then create `user_credentials.json`. Recent archinstall versions (3.x) use this shape:
-
-   ```json
-   {
-     "users": [
-       {
-         "username": "jack",
-         "enc_password": "$6$PASTE_YOUR_HASH_HERE",
-         "sudo": true,
-         "groups": []
-       }
-     ]
-   }
-   ```
-
-   Older versions use different key names (for example `"!users"` and `"!password"`). Because key names vary by version, treat this as a template: if archinstall rejects the file, compare it with a generated one (steps 1-3), which is always correct for your ISO.
-
-   Validate the syntax with `jq . user_credentials.json`. If your version also wants a root entry (for example `"root_enc_password"`), add it the same way, or skip root and rely on sudo.
-
 ### 5d. Copy the files out of the VM
 
 In the VM, set a throwaway root password so SSH works:
