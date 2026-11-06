@@ -24,6 +24,8 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
+      LoginBackground=true
+      UserIcon=true
 - name: Configure SDDM greeter (Wayland, remember last user/session)
   ansible.builtin.copy:
     dest: /etc/sddm.conf.d/10-wayland.conf
