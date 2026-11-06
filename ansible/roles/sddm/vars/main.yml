@@ -1,7 +1,7 @@
 sddm_flavor: mocha
 sddm_accent: mauve
 sddm_catppuccin_version: "v1.1.2"        # check github.com/catppuccin/sddm/releases
-sddm_theme_sha256: "PASTE_SHA256_HERE"
+sddm_theme_sha256: "sha256:3d9bcc540924e06ae1aaef6994130170db7f630d7d1b25fe5e780d08493ed67f"
 sddm_theme_name: "catppuccin-{{ sddm_flavor }}-{{ sddm_accent }}"
 sddm_theme_url: "https://github.com/catppuccin/sddm/releases/download/{{ sddm_catppuccin_version }}/{{ sddm_theme_name }}-sddm.zip"
 sddm_theme_zip: "/var/tmp/{{ sddm_theme_name }}-{{ sddm_catppuccin_version }}.zip"
