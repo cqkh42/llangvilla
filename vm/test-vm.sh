@@ -120,7 +120,7 @@ find_ovmf() {
 
 need() {
   local c
-  for c in "$@"; do command -v "$c" >/dev/null || die "Missing command: $c (vm/README.md, 'What you need')"; done
+  for c in "$@"; do command -v "$c" >/dev/null || die "Missing command: $c (vm/README.md, Requirements)"; done
 }
 
 find_iso() {
@@ -295,7 +295,7 @@ do_install() {
     [[ -b $stick_dev ]] || die "$stick_dev is not a block device"
     [[ $(lsblk -dnro TRAN "$stick_dev") == usb ]] || die "$stick_dev is not a USB disk, refusing"
     if lsblk -nro MOUNTPOINT "$stick_dev" | grep -q .; then
-      die "$stick_dev is mounted. Unmount it first (autoinstall/README.md section 6d)"
+      die "$stick_dev is mounted. Unmount it first (autoinstall/README.md, Eject)"
     fi
     step "Installing from the real stick $stick_dev (Ventoy menu, then the installer)"
     warn "This uses the stick's own autoinstall.env: its countdown applies, and a pinned"

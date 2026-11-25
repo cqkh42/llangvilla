@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the zero-touch Arch Linux USB stick (autoinstall/README.md sections 4-6):
+# Builds the zero-touch Arch Linux USB stick (autoinstall/README.md, "Building the stick"):
 #   - builds the custom Arch ISO in an Arch Docker container (build.sh + install.sh),
 #     reusing the cached ISO unless install.sh/build.sh changed or --rebuild is given
 #   - downloads + unpacks Ventoy (verified against a pinned SHA-256)
@@ -177,7 +177,7 @@ latest_iso() {
 
 build_iso() {
   local docker=(docker) iso
-  command -v docker >/dev/null || die "Docker is needed to build the ISO (README section 2)"
+  command -v docker >/dev/null || die "Docker is needed to build the ISO (autoinstall/README.md, Requirements)"
   if ! docker info >/dev/null 2>&1; then docker=(sudo docker); fi
 
   info "Building in an archlinux:latest container (5-15 minutes, lots of output is normal)"
@@ -280,7 +280,7 @@ mount_ventoy() {
   ok "Ventoy partition ${part} mounted at ${mnt}"
 }
 
-# README section 6, safe to re-run on a stick from a previous flash:
+# autoinstall/README.md "Building the stick", safe to re-run on a stick from a previous flash:
 #   arch-autoinstall.iso       copied only if missing or different from the local build
 #   ventoy/ventoy.json         written only if missing
 #   arch-autoinstall/autoinstall.env   template copied only if missing (holds your secrets)
@@ -326,7 +326,7 @@ populate_stick() {
     if grep -q "\"/${STICK_ISO}\"" "$json_dest"; then
       ok "ventoy.json already present, leaving it alone"
     else
-      warn "ventoy.json exists but does not auto-boot /${STICK_ISO}. Merge in README section 6c by hand"
+      warn "ventoy.json exists but does not auto-boot /${STICK_ISO}. Merge in the entries from autoinstall/README.md (Ventoy configuration) by hand"
     fi
   else
     cat > "$json_dest" <<JSON
@@ -392,7 +392,7 @@ build_stick() {
     step "Updating files on the stick"
     populate_stick "$VENTOY_MOUNT"
   else
-    warn "Could not mount automatically. Unplug and replug the stick, then do README section 6 by hand"
+    warn "Could not mount automatically. Unplug and replug the stick, then follow autoinstall/README.md (Building the stick) by hand"
   fi
 }
 
@@ -466,7 +466,7 @@ if (( STICK_POPULATED )); then
   if bash "${BUILD_DIR}/install.sh" --check "$env_file"; then
     ok "autoinstall.env passes install.sh --check"
   else
-    warn "autoinstall.env is not ready yet (README section 6b). Edit it, then re-check:"
+    warn "autoinstall.env is not ready yet (autoinstall/README.md, Configure). Edit it, then re-check:"
     info "  nano \"${env_file}\""
     info "  bash \"${BUILD_DIR}/install.sh\" --check \"${env_file}\""
   fi

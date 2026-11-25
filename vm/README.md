@@ -1,57 +1,128 @@
-# Trying it in a VM (part 3)
+# vm
 
-`vm/test-vm.sh` runs the whole flow from your **working tree** in a QEMU VM with UEFI firmware: the installer (part 1) onto a blank 60 GB virtual disk from a small virtual USB stick, then the config (part 2) on the result. It needs no real stick, and touches nothing outside `~/.cache/llangvilla/vm/`. Use it to test changes before they reach the real machine, and to see how the result looks and feels.
+Runs the installer and the config from the working tree in a QEMU VM with UEFI firmware. It needs no USB stick or spare hardware, and only writes to `~/.cache/llangvilla/vm/`. Use it to test changes before they reach the real machine, and to see what the result looks like.
 
-## What you need
-
-QEMU, UEFI firmware (OVMF) and mtools, plus an ISO from `autoinstall/build-usb.sh`. The install commands are in [`autoinstall/README.md`](../autoinstall/README.md) section 2 (Prepare the build computer), and section 4 builds the ISO. Without `/dev/kvm` access the VM falls back to software emulation, which is very slow (section 2 adds you to the `kvm` group).
-
-## The commands
+## Quick start
 
 ```bash
-vm/test-vm.sh                # = all: install, check, config
+eval "$(autoinstall/build-usb.sh)"     # build the ISO once
+vm/test-vm.sh                          # install, check the base, apply the config
+vm/test-vm.sh boot                     # open the result in a window (user jack, password test)
 ```
 
-| Command | What it does |
+## Requirements
+
+- QEMU, OVMF (UEFI firmware), mtools, dosfstools, OpenSSH and OpenSSL. Package names are in [autoinstall: Requirements](../autoinstall/README.md#requirements).
+- An ISO from `autoinstall/build-usb.sh`. The newest one in the cache is used by default.
+- Write access to `/dev/kvm`: run `sudo usermod -aG kvm "$USER"`, then log in again. Without it QEMU falls back to software emulation, and an install takes hours.
+
+## Usage
+
+```
+vm/test-vm.sh [COMMAND] [OPTIONS]
+```
+
+### Commands
+
+| Command | Description |
 |---|---|
-| `install` | Creates a fresh disk, writes a test `autoinstall.env` (the template with test values: password `test`, a generated SSH key, no countdown, `ON_FAILURE=poweroff`, first-boot hook off), boots the newest ISO, waits for the VM to power off, copies the installer's logs to `~/.cache/llangvilla/vm/logs/`. 10-25 minutes with KVM. Tests part 1 |
-| `check` | Boots the installed disk headless and checks the base system over SSH: no failed units, sudo, hostname, full name, btrfs subvolumes and fstab, the ESP, systemd-boot and an entry per kernel, timezone, locale, zram swap, NetworkManager, sshd, SDDM running, root locked, Wi-Fi profile mode 600, and (from the host) that SSH refuses passwords. Tests part 1 |
-| `config` | Boots the installed disk, copies the working tree's `config/` into it, runs `config/apply.sh --no-pull`, runs it again (warns if anything changed the second time), reboots, and checks there are no failed units and SDDM is up. Repeatable on the same install. Tests part 2 |
-| `boot` | Boots the installed disk in a window: the real SDDM login (user `jack`, password `test`). Changes persist until the next `install` |
-| `ssh` | SSH into a VM started with `boot`, from another terminal (port 2222). Extra args run as a command |
-| `live` | Boots just the ISO in a window with a scratch disk: a root shell on the live system |
-| `clean` | Deletes the VM files (logs are kept) |
+| `all` | Default. `install`, then `check`, then `config` |
+| `install` | Fresh disk and test stick, boot the ISO, wait for the installer to power off, collect its logs |
+| `check` | Boot the installed disk headless and verify the base system over SSH |
+| `config` | Boot the installed disk, apply the working tree's `config/`, verify, power off. Repeatable |
+| `boot` | Boot the installed disk in a window. Changes persist until the next `install` |
+| `ssh [ARGS]` | SSH into a VM started with `boot`; extra arguments run as a command |
+| `live` | Boot the ISO alone with a scratch disk; the installer stops at a root shell |
+| `clean` | Delete the VM disk, firmware variables, stick image and test key. Logs are kept |
 
-By default the working tree's `install.sh` and `packages.txt` go on the test stick, and the installer baked into the ISO hands over to them, so installer changes don't need an ISO rebuild. `--baked` tests the ISO's own copy instead.
+### Options
 
-## Typical loops
+| Option | Default | Description |
+|---|---|---|
+| `--iso FILE` | `$ISO`, else newest cached | ISO to boot |
+| `--env FILE` | `autoinstall/autoinstall.env.example` | Base env for the test stick; placeholders are filled and test overrides appended |
+| `--firstboot` | off | Keep `CONFIG_REPO_URL`, so the installed system runs the real first-boot hook (clones from GitHub, not the working tree). `check` waits for it |
+| `--baked` | off | Use the `install.sh` baked into the ISO instead of the working tree's |
+| `--stick DEV` | — | Install from a real USB stick with its own env (needs sudo). `check` and `config` can't log in afterwards; use `boot` |
+| `--gui`, `--headless` | headless, except `boot`/`live` | Show or hide the VM window |
+| `--disk-size GB` | `60` | Size of the virtual target disk |
+| `--timeout MIN` | `90` | Give up on `install` after this long |
 
-- **Installer change** (`install.sh`, `packages.txt`): `vm/test-vm.sh` (the whole flow).
-- **Config change** (anything in `config/`): install once, then iterate with `vm/test-vm.sh config` and look at it with `vm/test-vm.sh boot`. No reinstall needed: it applies on top, just as on the real box. For a clean-slate check, run the whole flow.
+### Environment
 
-## Options
+| Variable | Default | Description |
+|---|---|---|
+| `OVMF_CODE`, `OVMF_VARS` | auto-detected | Firmware files (found on Arch, Debian/Ubuntu and Fedora) |
+| `VM_SSH_PORT` | `2222` | Host port forwarded to the VM's SSH |
+| `VM_MEMORY` | `4G` | VM memory |
+| `TEST_PASSWORD` | `test` | Password of the test user |
 
-| Option | Effect |
+## What gets tested
+
+### Test stick (`install`)
+
+The test `autoinstall.env` is the template with these overrides:
+
+- `TARGET_DISK=auto` and `CONFIRM_SECONDS=0`;
+- `ON_FAILURE=poweroff`, so a failure ends the VM instead of waiting at a shell;
+- the test password hash and a generated SSH key;
+- `CONFIG_REPO_URL=''` unless `--firstboot` is given.
+
+The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO's installer hands over to that `install.sh`, so installer changes need no ISO rebuild.
+
+### Base system (`check`)
+
+- systemd reports `running` with no failed units
+- sudo works for the test user
+- hostname, full name, timezone and locale match the env
+- btrfs root on `@`; `/home`, `/var/log`, `/var/cache/pacman/pkg` and `/.snapshots` are mounted; fstab has no `subvolid=`
+- `/boot` is the vfat ESP; systemd-boot is installed with an entry and a kernel for each of `KERNELS`
+- zram swap is active
+- NetworkManager, sshd and SDDM are active
+- root is locked
+- the Wi-Fi profile has mode 600
+- SSH refuses passwords (checked from the host)
+- with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist
+
+### Config (`config`)
+
+1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
+2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails.
+3. Runs it again and warns if any task reports a change.
+4. Reboots and checks that systemd reports `running` and SDDM is active.
+
+## Workflows
+
+| Change | Run |
 |---|---|
-| `--gui` / `--headless` | Show or hide the VM window (default: hidden, except for `boot`/`live`) |
-| `--firstboot` | Keep `CONFIG_REPO_URL`, so the installed system runs the real first-boot hook. It clones from **GitHub** (the default branch, or `CONFIG_REPO_BRANCH`), not your working tree; `check` waits for it and its reboot. Use it to test the hook itself, e.g. before a real install |
-| `--env FILE` | Use another env as the base, e.g. your real one (test overrides still apply) |
-| `--stick /dev/sdX` | Install from the **real** stick, exactly as the OptiPlex would (sudo needed, stick unmounted). Its own env is used, so `check`/`config` can't log in; look with `boot`. A pinned `TARGET_DISK` doesn't exist in the VM, so the installer stops safely: set `TARGET_DISK=auto` while testing this way |
-| `--baked` | Use the `install.sh` baked into the ISO |
-| `--iso FILE`, `--disk-size GB`, `--timeout MIN` | What they say |
+| `install.sh` or `autoinstall/packages.txt` | `vm/test-vm.sh` |
+| `config/` | `vm/test-vm.sh config` on an existing install, then `vm/test-vm.sh boot`. Run the full `vm/test-vm.sh` before merging |
+| The first-boot hook | `vm/test-vm.sh --firstboot` (needs the change pushed, since the hook clones from GitHub) |
+| A real stick, before using it | `vm/test-vm.sh install --stick /dev/sdX` with `TARGET_DISK=auto` on the stick, then `vm/test-vm.sh boot` |
 
-Environment: `OVMF_CODE` / `OVMF_VARS` (found automatically on Arch, Debian/Ubuntu and Fedora), `VM_SSH_PORT` (2222), `VM_MEMORY` (4G), `TEST_PASSWORD` (test).
+## Files
 
-## In CI
+All under `~/.cache/llangvilla/vm/`:
 
-`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner (which has KVM), on demand only for now (Actions tab, "VM install test", optionally with the real first-boot hook). Installer logs are uploaded as an artifact. A weekly schedule will be restored once it passes reliably (issue #11): because Arch is a rolling release, a scheduled run catches breakage that no commit here caused.
+| Path | Contents |
+|---|---|
+| `disk.qcow2`, `OVMF_VARS.fd` | Installed VM disk and its UEFI variables |
+| `stick.img`, `autoinstall.env` | Test stick image and its env (mode 600) |
+| `id_ed25519`, `id_ed25519.pub` | Test SSH key |
+| `live-disk.qcow2`, `OVMF_VARS.live.fd` | Scratch disk for `live` |
+| `logs/<timestamp>/` | Installer logs copied from the test stick |
+
+## CI
+
+`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It is manual for now: Actions tab → **VM install test**, with an optional `firstboot` input. Installer logs are uploaded as an artifact. A weekly schedule will return once the test is reliable (issue #11), to catch breakage from Arch's rolling updates.
 
 ## Troubleshooting
 
-| Symptom | Likely cause and fix |
+| Symptom | Cause and fix |
 |---|---|
-| "left no status" | The installer stopped before finding the test stick, or hung at a prompt. Re-run with `--gui` to watch it. |
-| Extremely slow | No KVM (it warns). Join the `kvm` group. |
-| `config` fails | The playbook output is printed above the error. `vm/test-vm.sh boot` plus `vm/test-vm.sh ssh` to poke at the VM; the copied tree is in `~/llangvilla-worktree`. |
-| "The second run changed things" | A task isn't idempotent (config/README.md, rules). The changed tasks are listed. |
-| `--ansible` is rejected | Replaced by `--firstboot` (the hook from GitHub) and the `config` command (your working tree). |
+| `The installer left no status` | It stopped before finding the test stick, or is waiting at a prompt. Re-run with `--gui` |
+| Very slow, `/dev/kvm is not usable` warning | Join the `kvm` group (see [Requirements](#requirements)) |
+| `No ISO found` | Build one with `autoinstall/build-usb.sh`, or pass `--iso` |
+| `config/apply.sh failed` | The playbook output is shown above. Inspect with `vm/test-vm.sh boot` and `vm/test-vm.sh ssh` |
+| `The second run changed things` | A task isn't idempotent; the changed tasks are listed ([writing tasks](../config/README.md#writing-tasks)) |
+| `--ansible was replaced` | Use `--firstboot` for the hook from GitHub, or `config` for the working tree |

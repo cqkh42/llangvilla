@@ -10,7 +10,7 @@
 #   sudo config/apply.sh -- --tags sddm
 #
 # Must not reboot or restart the display manager: at first boot it runs before the
-# login screen (config/README.md, "Rules for the config").
+# login screen (config/README.md, "Writing tasks").
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
