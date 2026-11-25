@@ -144,7 +144,7 @@ Worth changing:
 
 | Setting | Why |
 |---|---|
-| `TARGET_DISK` | Pin the OptiPlex's disk with its `/dev/disk/by-id/...` path (boot the stick once and run `ls -l /dev/disk/by-id/` at the shell, or read it from the installer's `TARGET DISK` output). `auto` = largest internal disk of at least 40 GB |
+| `TARGET_DISK` | Pin the OptiPlex's disk with its `/dev/disk/by-id/...` path (boot the stick on the OptiPlex: its disk already holds data, so the installer stops at the `YES` prompt. Press Enter to abort, then run `ls -l /dev/disk/by-id/` at the root shell and match the model and serial it printed). `auto` = largest internal disk of at least 40 GB |
 | `SSH_KEYS_URL` / `SSH_AUTHORIZED_KEYS` | Where your public keys come from. With no key installed, password login stays on (with a warning) so you are never locked out |
 
 Check the file from the build computer before booting anything:

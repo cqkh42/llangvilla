@@ -71,7 +71,7 @@ Usage: build-usb.sh [--rebuild] [--force] [DISK]
              Without it the script only builds the ISO and downloads Ventoy.
              If the stick already has Ventoy it is kept (nothing is erased).
   --rebuild  rebuild the Arch ISO even if a cached one is up to date
-             (do this about monthly so the ISO's archinstall stays current)
+             (every few months, to refresh the live kernel/firmware for new hardware)
   --force    wipe the stick and reinstall Ventoy (Ventoy2Disk.sh -I)
 
 Find your stick with:
@@ -427,8 +427,8 @@ elif [[ ! -f "$ISO_STAMP" || "$(cat "$ISO_STAMP")" != "$(sources_hash)" ]]; then
   build_iso
 else
   ok "Cached ISO is up to date: $(basename "$ISO")"
-  if [[ -n "$(find "$ISO" -mtime +30)" ]]; then
-    warn "It is over 30 days old. Consider --rebuild so its archinstall stays current"
+  if [[ -n "$(find "$ISO" -mtime +90)" ]]; then
+    warn "It is over 90 days old. Consider --rebuild to refresh the live kernel and firmware"
   fi
 fi
 ISO=$(latest_iso)
