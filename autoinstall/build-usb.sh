@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
-# Builds the zero-touch Arch Linux USB stick (autoinstall/README.md sections 4-7):
+# Builds the zero-touch Arch Linux USB stick (autoinstall/README.md sections 4-6):
 #   - builds the custom Arch ISO in an Arch Docker container (build.sh + install.sh),
 #     reusing the cached ISO unless install.sh/build.sh changed or --rebuild is given
 #   - downloads + unpacks Ventoy (verified against a pinned SHA-256)
 #   - optionally builds the stick (ERASES it if Ventoy is not already on it):
 #     installs Ventoy, mounts it, then copies the ISO, ventoy.json, the
-#     autoinstall.env template and your archinstall JSON onto it.
-#     Filling in the autoinstall.env placeholders is still manual.
+#     autoinstall.env template and packages.txt onto it.
+#     Filling in the autoinstall.env placeholders is still manual; the script
+#     then checks it with `install.sh --check`.
 #
 # Usage (disk is optional; without it the script only builds/downloads):
 #   autoinstall/build-usb.sh [--rebuild] [--force] [/dev/sdX]   # from a checkout
 #   DISK=/dev/sdb bash -c "$(curl -fsSL "$URL")"                # or straight from GitHub
 #   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb                   # "_" fills $0, so the disk is $1
 #
-# archinstall JSON: user_configuration.json and user_credentials.json are copied
-# from $CONFIG_DIR (default ~/.cache/llangvilla/generated) when present. Generate
-# them once in a VM (README section 5).
-#
 # Re-running on a stick that already has Ventoy is safe: Ventoy is kept, the ISO
 # is only re-copied if it differs, ventoy.json and autoinstall.env are left alone,
-# and the JSON files are refreshed from $CONFIG_DIR.
+# and packages.txt is refreshed from the repo.
 #
 # Everything is cached in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
 # Logs go to stderr; the only stdout is shell-evaluable lines at the very end:
@@ -41,13 +38,12 @@ VENTOY_TARBALL="ventoy-${VENTOY_VERSION}-linux.tar.gz"
 VENTOY_URL="https://github.com/ventoy/Ventoy/releases/download/v${VENTOY_VERSION}/${VENTOY_TARBALL}"
 
 RAW_BASE="https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall"
-BUILD_FILES=(build.sh install.sh autoinstall.env.example)
+BUILD_FILES=(build.sh install.sh autoinstall.env.example packages.txt)
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/llangvilla"
 BUILD_DIR="${CACHE_DIR}/iso-build"        # mounted at /work in the container
 ISO_OUT_DIR="${BUILD_DIR}/out"
 ISO_STAMP="${ISO_OUT_DIR}/.sources.sha256"
-CONFIG_DIR="${CONFIG_DIR:-${CACHE_DIR}/generated}"
 VENTOY_TARBALL_PATH="${CACHE_DIR}/${VENTOY_TARBALL}"
 VENTOY_DIR="${CACHE_DIR}/ventoy-${VENTOY_VERSION}"
 
@@ -77,10 +73,6 @@ Usage: build-usb.sh [--rebuild] [--force] [DISK]
   --rebuild  rebuild the Arch ISO even if a cached one is up to date
              (do this about monthly so the ISO's archinstall stays current)
   --force    wipe the stick and reinstall Ventoy (Ventoy2Disk.sh -I)
-
-Environment:
-  CONFIG_DIR folder holding user_configuration.json and user_credentials.json
-             (default: ${CACHE_DIR}/generated)
 
 Find your stick with:
   lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
@@ -150,7 +142,7 @@ fetch_verified() {
   ok "Downloaded and verified ${label}"
 }
 
-# Copy build.sh, install.sh and the env template into BUILD_DIR, from the
+# Copy build.sh, install.sh, the env template and packages.txt into BUILD_DIR, from the
 # checkout if we are in one, otherwise from GitHub.
 stage_sources() {
   local f
@@ -288,11 +280,11 @@ mount_ventoy() {
   ok "Ventoy partition ${part} mounted at ${mnt}"
 }
 
-# README section 7, safe to re-run on a stick from a previous flash:
+# README section 6, safe to re-run on a stick from a previous flash:
 #   arch-autoinstall.iso       copied only if missing or different from the local build
 #   ventoy/ventoy.json         written only if missing
 #   arch-autoinstall/autoinstall.env   template copied only if missing (holds your secrets)
-#   arch-autoinstall/*.json    refreshed from $CONFIG_DIR when present there
+#   arch-autoinstall/packages.txt     refreshed from the repo on every run
 populate_stick() {
   local v=$1 need_copy=1 f
   local iso_dest="${v}/${STICK_ISO}"
@@ -334,7 +326,7 @@ populate_stick() {
     if grep -q "\"/${STICK_ISO}\"" "$json_dest"; then
       ok "ventoy.json already present, leaving it alone"
     else
-      warn "ventoy.json exists but does not auto-boot /${STICK_ISO}. Merge in README section 7c by hand"
+      warn "ventoy.json exists but does not auto-boot /${STICK_ISO}. Merge in README section 6c by hand"
     fi
   else
     cat > "$json_dest" <<JSON
@@ -356,15 +348,15 @@ JSON
     ok "autoinstall.env template written"
   fi
 
-  # --- archinstall JSON from CONFIG_DIR ---
+  # --- packages.txt: always refreshed (edit it in the repo, not on the stick) ---
+  cp "${BUILD_DIR}/packages.txt" "${cfg_dest}/packages.txt"
+  ok "packages.txt copied ($(grep -cv '^[[:space:]]*\(#\|$\)' "${cfg_dest}/packages.txt") lines of packages)"
+
+  # --- leftovers from the old archinstall flow ---
   for f in user_configuration.json user_credentials.json; do
-    if [[ -f "${CONFIG_DIR}/${f}" ]]; then
-      cp "${CONFIG_DIR}/${f}" "${cfg_dest}/${f}"
-      ok "${f} copied from ${CONFIG_DIR}"
-    elif [[ -f "${cfg_dest}/${f}" ]]; then
-      ok "${f} already on the stick (none in ${CONFIG_DIR} to refresh it from)"
-    else
-      warn "${f} is missing: generate it in a VM (README section 5) into ${CONFIG_DIR}, then re-run"
+    if [[ -f "${cfg_dest}/${f}" ]]; then
+      warn "${STICK_CFG}/${f} is from the old archinstall flow and is no longer used."
+      warn "  It may hold a password hash: delete it with  rm \"${cfg_dest}/${f}\""
     fi
   done
   sync
@@ -400,7 +392,7 @@ build_stick() {
     step "Updating files on the stick"
     populate_stick "$VENTOY_MOUNT"
   else
-    warn "Could not mount automatically. Unplug and replug the stick, then do README section 7 by hand"
+    warn "Could not mount automatically. Unplug and replug the stick, then do README section 6 by hand"
   fi
 }
 
@@ -471,13 +463,12 @@ if [[ -n "$VENTOY_MOUNT" ]]; then
 fi
 if (( STICK_POPULATED )); then
   env_file="${VENTOY_MOUNT}/${STICK_CFG}/autoinstall.env"
-  left=$(grep -c '__[A-Z_]*__' "$env_file" || true)
-  if (( left > 0 )); then
-    warn "${left} lines in autoinstall.env still hold placeholders (README section 7b):"
-    info "  nano \"${env_file}\""
-    info "  grep -n '__' \"${env_file}\"    # must print nothing"
+  if bash "${BUILD_DIR}/install.sh" --check "$env_file"; then
+    ok "autoinstall.env passes install.sh --check"
   else
-    ok "autoinstall.env has no placeholders left"
+    warn "autoinstall.env is not ready yet (README section 6b). Edit it, then re-check:"
+    info "  nano \"${env_file}\""
+    info "  bash \"${BUILD_DIR}/install.sh\" --check \"${env_file}\""
   fi
   info "Then flush and unmount:"
   info "  sync && udisksctl unmount -b ${VENTOY_PART}"
