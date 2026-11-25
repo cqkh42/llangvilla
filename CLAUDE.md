@@ -13,7 +13,7 @@ Home-network config, currently focused on one machine: the Dell OptiPlex (invent
   - `autoinstall.env.example` – template for the stick's `autoinstall.env`, with double-underscore placeholders.
   - `test-vm.sh` – installs into a QEMU/OVMF VM from a generated test stick and checks the result over SSH; `boot`/`live`/`ssh` subcommands for poking around. Uses the working tree's `install.sh` and `packages.txt` (no ISO rebuild).
 - `.github/workflows/lint-autoinstall.yml` – shellcheck on `autoinstall/*.sh`, plus `install.sh --check` on the template.
-- `.github/workflows/vm-test.yml` – builds the ISO and runs `test-vm.sh all` with KVM (weekly + manual).
+- `.github/workflows/vm-test.yml` – builds the ISO and runs `test-vm.sh all` with KVM (manual only for now; weekly schedule to return, issue #11).
 
 ## Working here
 
