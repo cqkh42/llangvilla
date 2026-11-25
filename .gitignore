@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Arch autoinstall: secrets and build output must never be committed
+autoinstall.env
+user_credentials.json
+user_configuration.json
+*.iso
+*.qcow2

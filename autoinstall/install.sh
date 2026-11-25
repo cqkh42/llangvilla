@@ -49,6 +49,7 @@ while parent=$(lsblk -dno PKNAME "$USB_DISK" 2>/dev/null | head -n1) && [[ -n $p
 done
 say "Found config on $USB_PART (disk $USB_DISK)."
 
+# shellcheck source=/dev/null
 [[ -f $CFG/autoinstall.env ]] && source "$CFG/autoinstall.env"
 : "${TARGET_DISK:=auto}" "${CONFIRM_SECONDS:=30}" "${WIFI_SSID:=}" "${WIFI_PSK:=}" "${WIFI_HIDDEN:=0}"
 : "${ROOT_FS:=btrfs}" "${ENABLE_SSH:=1}" "${USER_NAME:=}" "${REAL_NAME:=}" "${HOSTNAME_OVERRIDE:=}"
@@ -157,7 +158,7 @@ mount "$ESP" "$TARGET_MNT/boot"
 # Commands that archinstall runs inside the new system at the end (custom_commands).
 CMDS=()
 
-# 5-00. Lock the root account (log in as your user, use sudo) - like Ubuntu
+# 5-00. Lock the root account (log in as your user, use sudo)
 [[ $LOCK_ROOT == 1 ]] && CMDS+=("passwd -l root")
 
 # 5a. Wi-Fi profile for the installed system (NetworkManager keyfile)
@@ -199,13 +200,13 @@ fi
 # 5b. SSH server
 [[ $ENABLE_SSH == 1 ]] && CMDS+=("systemctl enable sshd.service")
 
-# 5c. Full name (what Ubuntu's identity.realname does)
+# 5c. Full name (archinstall has no real-name field)
 if [[ -n $USER_NAME && -n $REAL_NAME ]]; then
   printf -v c 'usermod -c %q %q' "$REAL_NAME" "$USER_NAME"
   CMDS+=("$c")
 fi
 
-# 5d. First-boot ansible-pull (based on your Ubuntu late-commands unit)
+# 5d. First-boot ansible-pull
 if [[ -n $ANSIBLE_PULL_URL ]]; then
   if [[ $ANSIBLE_BEFORE_LOGIN == 1 ]]; then
     # Run to completion BEFORE the login screen (SDDM) starts. A failure does not

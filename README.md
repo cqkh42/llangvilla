@@ -3,16 +3,18 @@ Llangvilla and the home network.
 
 ## Optiplex
 
+Runs Arch Linux (KDE Plasma), installed zero-touch from a USB stick and then
+configured by `ansible-pull` of this repo. See [`autoinstall/README.md`](autoinstall/README.md).
+
 ### To script
 
 #### Auto install
 
-1. deprecate ubunutu
-2. move more things to stand alone scripts
-3. anything we can break out into ansible
-4. actually do it
-5. documentation
-6. move the builder to an arch base
+1. move more things to stand alone scripts
+2. anything we can break out into ansible
+3. actually do it
+4. documentation
+5. move the builder to an arch base
 
 #### sddm
 1. use conf.d instead

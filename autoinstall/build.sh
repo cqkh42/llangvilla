@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs INSIDE an Arch Linux Docker container. Builds the custom ISO.
+# Runs INSIDE an Arch Linux Docker container (started by build-usb.sh). Builds the custom ISO.
 set -euo pipefail
 
 pacman -Syu --noconfirm archiso
