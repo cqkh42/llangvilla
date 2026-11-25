@@ -1,0 +1,14 @@
+---
+# Personalises the machine. Run it with config/apply.sh (config/README.md), never
+# directly with ansible-pull: apply.sh is the one entrypoint, at first boot and later.
+- name: Personalise the OptiPlex
+  hosts: optiplex
+  pre_tasks:
+    - name: Check the login user exists (created by the installer)
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ user_name }}"
+  roles:
+    - role: packages
+    - role: sddm
+    - role: setup_user

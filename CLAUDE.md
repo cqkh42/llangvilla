@@ -4,22 +4,28 @@ Home-network config, currently focused on one machine: the Dell OptiPlex (invent
 
 ## Layout
 
-- `ansible/` – `site.yml` applies roles `sddm` and `setup_user` plus a few pacman tasks (`community.general.pacman`). Inventory is `ansible/inventory.ini` (`ansible_connection=local`), wired up via the root `ansible.cfg`. Runs via first-boot `ansible-pull` as root, before SDDM starts.
-- `autoinstall/` – zero-touch Arch installer. `README.md` is the full guide.
+Three separate parts, kept apart on purpose (root `README.md` has the flow):
+
+- `autoinstall/` – **part 1, clean slate.** Zero-touch Arch installer. `README.md` is the full guide.
   - `build-usb.sh` – host-side: builds the ISO in an `archlinux` Docker container, downloads Ventoy (pinned SHA-256), installs and populates the stick. Uses the sibling scripts when run from a checkout, GitHub `main` otherwise.
   - `build.sh` – runs inside the container, builds the ISO with archiso and bakes in `install.sh`.
-  - `install.sh` – runs on the live ISO: validates config, partitions, `pacstrap`s and configures the system (user, Wi-Fi, SSH keys, systemd-boot, ansible-pull unit), powers off. `install.sh --check FILE` validates an env file anywhere (safe).
-  - `packages.txt` – package list for the installed system; copied onto the stick, not baked into the ISO.
+  - `install.sh` – runs on the live ISO: validates config, partitions, `pacstrap`s and configures the system (user, Wi-Fi, SSH keys, systemd-boot, first-boot hook), powers off. `install.sh --check FILE` validates an env file anywhere (safe).
+  - `packages.txt` – the clean-slate base package list; copied onto the stick, not baked into the ISO. Apps go in the config instead.
   - `autoinstall.env.example` – template for the stick's `autoinstall.env`, with double-underscore placeholders.
-  - `test-vm.sh` – installs into a QEMU/OVMF VM from a generated test stick and checks the result over SSH; `boot`/`live`/`ssh` subcommands for poking around. Uses the working tree's `install.sh` and `packages.txt` (no ISO rebuild).
-- `.github/workflows/lint-autoinstall.yml` – shellcheck on `autoinstall/*.sh`, plus `install.sh --check` on the template.
-- `.github/workflows/vm-test.yml` – builds the ISO and runs `test-vm.sh all` with KVM (manual only for now; weekly schedule to return, issue #11).
+- `config/` – **part 2, personalisation.** Live: re-applied on the box as it changes. `README.md` is the guide.
+  - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, install Ansible if missing, run the playbook. Nix home-manager will slot in here.
+  - `ansible/` – `site.yml` with roles `packages`, `sddm`, `setup_user`; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
+- `vm/` – **part 3, try it.** `test-vm.sh` installs into a QEMU/OVMF VM from a generated test stick, checks the base over SSH, then applies the working tree's `config/` and checks again; `config` alone iterates on config changes; `boot`/`live`/`ssh` for poking around. Uses the working tree's `install.sh`, `packages.txt` and `config/` (no ISO rebuild). `README.md` is the guide.
+- `.github/workflows/lint.yml` – shellcheck on all scripts, `install.sh --check` on the template, yamllint, ansible-lint and a playbook syntax check.
+- `.github/workflows/vm-test.yml` – builds the ISO and runs `vm/test-vm.sh all` with KVM (manual only for now; weekly schedule to return, issue #11).
+
+The only link between parts 1 and 2 is the first-boot hook: the installer clones the repo to `/opt/llangvilla` and runs `CONFIG_ENTRYPOINT` (`config/apply.sh`). Keep it that way: the installer must not know about Ansible, and the config must not assume installer settings.
 
 ## Working here
 
-- Lint before pushing: `shellcheck autoinstall/*.sh` (CI runs this), plus `ansible-lint ansible/` and `yamllint .`. None are preinstalled in the cloud container (`pip install shellcheck-py ansible-lint yamllint`).
-- Don't run the playbook, `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks; use the VM workflow.
-- Test installer or package changes with `autoinstall/test-vm.sh` (README section 7).
+- Lint before pushing: `shellcheck autoinstall/*.sh config/*.sh vm/*.sh`, `yamllint .` and `ansible-lint config/ansible` (CI runs all three). None are preinstalled in the cloud container (`pip install shellcheck-py ansible ansible-lint yamllint`; the full `ansible` package provides `community.general`, since Galaxy may be unreachable).
+- Don't run the playbook or `config/apply.sh` (`--syntax-check` is fine), `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `vm/test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks; use the VM workflow.
+- Test installer or base package changes with `vm/test-vm.sh`, config changes with `vm/test-vm.sh config` (`vm/README.md`).
 - Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. Keep the placeholders.
-- Playbook tasks run before login: never restart SDDM or reboot from the playbook (see `autoinstall/README.md` section 13).
+- The config's first run is before login: never restart SDDM or reboot from it (see `config/README.md`, rules).
 - Scripts use `set -euo pipefail` (`install.sh` uses `-uo`, deliberately, so failures drop to a shell). Keep that style.

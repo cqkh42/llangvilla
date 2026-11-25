@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Tests the zero-touch installer in a QEMU VM (UEFI via OVMF). No stick or real
-# hardware needed, and nothing outside ~/.cache/llangvilla/vm is touched.
-# README section 7 is the guide.
+# Tries the whole flow in a QEMU VM (UEFI via OVMF): the installer (part 1) and the
+# config (part 2), from the working tree. No stick or real hardware needed, and
+# nothing outside ~/.cache/llangvilla/vm is touched. vm/README.md is the guide.
 #
-# Usage: autoinstall/test-vm.sh [COMMAND] [OPTIONS]
+# Usage: vm/test-vm.sh [COMMAND] [OPTIONS]
 #
 # Commands:
-#   all       (default) install, then check
+#   all       (default) install, check, then config
 #   install   blank virtual disk + the ISO + a small virtual USB stick with test
 #             config; waits until the installer powers the VM off
-#   check     boots the installed disk headless, runs checks over SSH, powers off
+#   check     boots the installed disk headless, checks the base system over SSH,
+#             powers off
+#   config    boots the installed disk headless, applies the working tree's config/
+#             (config/apply.sh --no-pull), applies it again to check nothing changes,
+#             reboots, checks the login screen comes up, powers off. Repeatable on
+#             the same install, so it is the quick loop for config changes
 #   boot      boots the installed disk in a window to look around (SSH on port 2222)
 #   ssh       SSH into a VM started with `boot` (extra args run as a command)
 #   live      boots the ISO in a window with a separate blank disk and no stick:
@@ -18,11 +23,13 @@
 #
 # Options:
 #   --iso FILE       ISO to boot (default: $ISO, else the newest build in the cache)
-#   --env FILE       base autoinstall.env (default: autoinstall.env.example). Any
-#                    placeholders are filled with test values, then test overrides are
-#                    appended (blank disk, no countdown, test password and SSH key).
-#   --ansible        keep ANSIBLE_PULL_URL (off by default: it tests the repo's main
-#                    branch, not your working tree; set ANSIBLE_PULL_BRANCH to test one)
+#   --env FILE       base autoinstall.env (default: autoinstall/autoinstall.env.example).
+#                    Any placeholders are filled with test values, then test overrides
+#                    are appended (blank disk, no countdown, test password and SSH key).
+#   --firstboot      keep CONFIG_REPO_URL, so the installed system runs the real
+#                    first-boot hook (clones from GitHub: the default branch, or
+#                    CONFIG_REPO_BRANCH from the env, NOT your working tree); `check`
+#                    waits for it. Off by default; `config` tests the working tree.
 #   --baked          use the install.sh baked into the ISO. By default the working
 #                    tree's install.sh goes on the test stick and replaces it, so
 #                    installer changes can be tested without rebuilding the ISO
@@ -37,7 +44,8 @@
 # Debian/Ubuntu and Fedora), VM_SSH_PORT (2222), VM_MEMORY (4G), TEST_PASSWORD (test).
 set -euo pipefail
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ai="$repo/autoinstall"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/llangvilla"
 state="$cache/vm"
 disk="$state/disk.qcow2"
@@ -49,6 +57,7 @@ test_env="$state/autoinstall.env"
 ssh_port="${VM_SSH_PORT:-2222}"
 memory="${VM_MEMORY:-4G}"
 test_password="${TEST_PASSWORD:-test}"
+worktree_dir=llangvilla-worktree     # in the VM user's home, for `config`
 
 # ---------- logging ----------
 if [[ -t 2 ]]; then
@@ -66,16 +75,17 @@ usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0
 # ---------- arguments ----------
 cmd=all
 case "${1:-}" in
-  all|install|check|boot|ssh|live|clean) cmd=$1; shift ;;
+  all|install|check|config|boot|ssh|live|clean) cmd=$1; shift ;;
   -h|--help) usage; exit 0 ;;
 esac
-iso="${ISO:-}" base_env="$here/autoinstall.env.example" keep_ansible=0 baked=0 stick_dev=""
+iso="${ISO:-}" base_env="$ai/autoinstall.env.example" keep_firstboot=0 baked=0 stick_dev=""
 gui="" disk_size=60 timeout_min=90 ssh_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --iso)       iso=$2; shift ;;
     --env)       base_env=$2; shift ;;
-    --ansible)   keep_ansible=1 ;;
+    --firstboot) keep_firstboot=1 ;;
+    --ansible)   die "--ansible was replaced by --firstboot (hook from GitHub) and the 'config' command (working tree)" ;;
     --baked)     baked=1 ;;
     --stick)     stick_dev=$2; shift ;;
     --gui)       gui=1 ;;
@@ -110,7 +120,7 @@ find_ovmf() {
 
 need() {
   local c
-  for c in "$@"; do command -v "$c" >/dev/null || die "Missing command: $c (README section 2)"; done
+  for c in "$@"; do command -v "$c" >/dev/null || die "Missing command: $c (vm/README.md, 'What you need')"; done
 }
 
 find_iso() {
@@ -172,11 +182,11 @@ make_test_env() {
     echo "ON_FAILURE=poweroff"
     echo "PASSWORD_HASH='${hash}'"
     echo "SSH_AUTHORIZED_KEYS='${pub}'"
-    (( keep_ansible )) || echo "ANSIBLE_PULL_URL=''"
+    (( keep_firstboot )) || echo "CONFIG_REPO_URL=''"
   } >> "$test_env"
   chmod 600 "$test_env"
-  bash "$here/install.sh" --check "$test_env" >/dev/null || {
-    bash "$here/install.sh" --check "$test_env" || true
+  bash "$ai/install.sh" --check "$test_env" >/dev/null || {
+    bash "$ai/install.sh" --check "$test_env" || true
     die "The test autoinstall.env is invalid (see above)."
   }
   ok "Test config: $test_env (password '$test_password', key $key)"
@@ -189,14 +199,84 @@ make_stick() {
   mkfs.fat -C -n AUTOINSTALL "$stick_img" 65536 >/dev/null
   mmd -i "$stick_img" ::/arch-autoinstall
   mcopy -i "$stick_img" "$test_env" ::/arch-autoinstall/autoinstall.env
-  mcopy -i "$stick_img" "$here/packages.txt" ::/arch-autoinstall/packages.txt
+  mcopy -i "$stick_img" "$ai/packages.txt" ::/arch-autoinstall/packages.txt
   if (( baked )); then
     info "Using the install.sh baked into the ISO (--baked)"
   else
-    mcopy -i "$stick_img" "$here/install.sh" ::/arch-autoinstall/install.sh
+    mcopy -i "$stick_img" "$ai/install.sh" ::/arch-autoinstall/install.sh
     info "Using the working tree's install.sh (no ISO rebuild needed; --baked to test the ISO's copy)"
   fi
   ok "Test stick image: $stick_img"
+}
+
+# Wait until SSH answers.
+wait_ssh() {
+  local deadline=$1 what=$2
+  ssh_opts
+  until ssh "${S[@]}" "$vm_user@127.0.0.1" true 2>/dev/null; do
+    (( SECONDS < deadline )) || return 1
+    kill -0 "$qemu_pid" 2>/dev/null || die "The VM exited before SSH came up ($what)."
+    sleep 5
+  done
+}
+
+# Run a command on the VM as root (the test password goes to sudo on stdin).
+vm_sudo() {
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' $*"
+}
+
+# Boot the installed disk in the background and wait for SSH.
+vm_up() {
+  local show=${gui:-0}
+  [[ -f $disk && -f $vars ]] || die "No installed VM disk. Run: vm/test-vm.sh install"
+  [[ -f $test_env && -f $key ]] || die "No test config (this needs the test SSH key; not available after --stick)."
+  need qemu-system-x86_64 ssh
+  find_ovmf
+  vm_user=$(env_value USER_NAME)
+  step "Booting the installed system (headless unless --gui)"
+  qemu_base "$disk" "$show"
+  "${Q[@]}" &
+  qemu_pid=$!
+  trap 'kill "$qemu_pid" 2>/dev/null || true' EXIT
+  wait_ssh $(( SECONDS + 15 * 60 )) "boot" || die "SSH did not come up within 15 minutes."
+  ok "SSH is up"
+}
+
+vm_down() {
+  step "Powering the VM off"
+  vm_sudo systemctl poweroff 2>/dev/null || true
+  for _ in $(seq 1 60); do kill -0 "$qemu_pid" 2>/dev/null || break; sleep 2; done
+  kill "$qemu_pid" 2>/dev/null || true
+  trap - EXIT
+}
+
+vm_reboot() {
+  info "Rebooting the VM..."
+  vm_sudo systemctl reboot 2>/dev/null || true
+  sleep 30
+  wait_ssh $(( SECONDS + 10 * 60 )) "after the reboot" || die "SSH did not come back after the reboot."
+}
+
+# With --firstboot, the installed system runs the first-boot hook (and reboots once).
+wait_firstboot() {
+  local deadline
+  [[ -n $(env_value CONFIG_REPO_URL) ]] || return 0
+  info "Waiting for the first-boot hook to finish (up to 40 min)..."
+  deadline=$(( SECONDS + 40 * 60 ))
+  until ssh "${S[@]}" "$vm_user@127.0.0.1" test -e /var/lib/llangvilla/firstboot.done 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      ssh "${S[@]}" "$vm_user@127.0.0.1" journalctl -u llangvilla-firstboot.service -b --no-pager 2>/dev/null | tail -n 40 >&2 || true
+      die "The first-boot hook did not finish (journal above)."
+    fi
+    sleep 10
+  done
+  ok "First-boot hook finished"
+  if [[ $(env_value FIRSTBOOT_REBOOT_AFTER 1) == 1 ]]; then
+    info "Waiting for its automatic reboot..."
+    sleep 30
+    wait_ssh $(( SECONDS + 10 * 60 )) "after the first-boot reboot" || die "SSH did not come back after the reboot."
+  fi
 }
 
 # ---------- commands ----------
@@ -215,7 +295,7 @@ do_install() {
     [[ -b $stick_dev ]] || die "$stick_dev is not a block device"
     [[ $(lsblk -dnro TRAN "$stick_dev") == usb ]] || die "$stick_dev is not a USB disk, refusing"
     if lsblk -nro MOUNTPOINT "$stick_dev" | grep -q .; then
-      die "$stick_dev is mounted. Unmount it first (README section 6d)"
+      die "$stick_dev is mounted. Unmount it first (autoinstall/README.md section 6d)"
     fi
     step "Installing from the real stick $stick_dev (Ventoy menu, then the installer)"
     warn "This uses the stick's own autoinstall.env: its countdown applies, and a pinned"
@@ -242,7 +322,7 @@ do_install() {
   if [[ -n $stick_dev ]]; then
     (( rc == 0 )) || die "Install did not finish cleanly."
     ok "VM powered off. Logs are in arch-autoinstall/logs/ on the stick."
-    info "Look around with: autoinstall/test-vm.sh boot"
+    info "Look around with: vm/test-vm.sh boot"
     return 0
   fi
 
@@ -259,61 +339,17 @@ do_install() {
   esac
 }
 
-# Wait until SSH answers (and, with --ansible, until the first-boot playbook is done).
-wait_ssh() {
-  local deadline=$1 what=$2
-  ssh_opts
-  until ssh "${S[@]}" "$vm_user@127.0.0.1" true 2>/dev/null; do
-    (( SECONDS < deadline )) || return 1
-    kill -0 "$qemu_pid" 2>/dev/null || die "The VM exited before SSH came up ($what)."
-    sleep 5
-  done
-}
-
 do_check() {
-  local show=${gui:-0} deadline ansible_url reboot_after fails=0 remote
-  [[ -f $disk && -f $vars ]] || die "No installed VM disk. Run: autoinstall/test-vm.sh install"
-  [[ -f $test_env && -f $key ]] || die "No test config (check needs the test SSH key; not available after --stick)."
-  need qemu-system-x86_64 ssh
-  find_ovmf
-  vm_user=$(env_value USER_NAME)
-  ansible_url=$(env_value ANSIBLE_PULL_URL)
-  reboot_after=$(env_value ANSIBLE_REBOOT_AFTER 1)
+  local fails=0 remote
+  vm_up
+  wait_firstboot
 
-  step "Booting the installed system (headless unless --gui)"
-  qemu_base "$disk" "$show"
-  "${Q[@]}" &
-  qemu_pid=$!
-  trap 'kill "$qemu_pid" 2>/dev/null || true' EXIT
-
-  deadline=$(( SECONDS + 15 * 60 ))
-  wait_ssh "$deadline" "first boot" || die "SSH did not come up within 15 minutes."
-  ok "SSH is up"
-
-  if [[ -n $ansible_url ]]; then
-    info "Waiting for the first-boot ansible-pull to finish (up to 40 min)..."
-    deadline=$(( SECONDS + 40 * 60 ))
-    until ssh "${S[@]}" "$vm_user@127.0.0.1" test -e /var/lib/ansible-pull-firstboot.done 2>/dev/null; do
-      if (( SECONDS >= deadline )); then
-        ssh "${S[@]}" "$vm_user@127.0.0.1" journalctl -u ansible-pull-firstboot.service -b --no-pager 2>/dev/null | tail -n 40 >&2 || true
-        die "ansible-pull did not finish (journal above)."
-      fi
-      sleep 10
-    done
-    ok "ansible-pull finished"
-    if [[ $reboot_after == 1 ]]; then
-      info "Waiting for the automatic reboot..."
-      sleep 30
-      wait_ssh $(( SECONDS + 10 * 60 )) "after the ansible reboot" || die "SSH did not come back after the reboot."
-    fi
-  fi
-
-  step "Running checks"
+  step "Checking the base system"
   # Expected values go in as environment variables; the checks run on the VM.
-  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_FS=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_ANSIBLE=%q EXP_LOCK_ROOT=%q bash -s' \
+  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_FS=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_FIRSTBOOT=%q EXP_LOCK_ROOT=%q bash -s' \
     "$test_password" "$(env_value HOST_NAME)" "$vm_user" "$(env_value REAL_NAME)" \
     "$(env_value ROOT_FS btrfs)" "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
-    "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$ansible_url" "$(env_value LOCK_ROOT 1)"
+    "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$(env_value CONFIG_REPO_URL)" "$(env_value LOCK_ROOT 1)"
   # shellcheck disable=SC2029  # expanding on the client side is the point
   ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
 fails=0
@@ -353,7 +389,10 @@ if pacman -Q sddm >/dev/null 2>&1; then check "sddm (login screen) is active" sy
 if [[ $EXP_LOCK_ROOT == 1 ]]; then check "root is locked" root_locked; fi
 if [[ $EXP_SSH_PW == 0 ]]; then check "sshd refuses passwords" sshd_no_pw; fi
 if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
-if [[ -n $EXP_ANSIBLE ]]; then check "ansible-pull done marker" test -e /var/lib/ansible-pull-firstboot.done; fi
+if [[ -n $EXP_FIRSTBOOT ]]; then
+  check "first-boot hook done marker" test -e /var/lib/llangvilla/firstboot.done
+  check "repo checkout in /opt/llangvilla" test -d /opt/llangvilla/.git
+fi
 exit $fails
 CHECKS
 
@@ -368,25 +407,59 @@ CHECKS
     fi
   fi
 
-  step "Powering the VM off"
-  # shellcheck disable=SC2029
-  ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' systemctl poweroff" 2>/dev/null || true
-  for _ in $(seq 1 60); do kill -0 "$qemu_pid" 2>/dev/null || break; sleep 2; done
-  kill "$qemu_pid" 2>/dev/null || true
-  trap - EXIT
+  vm_down
   (( fails == 0 )) || die "Some checks failed (see above)."
-  ok "All checks passed"
+  ok "All base-system checks passed"
+}
+
+do_config() {
+  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" state
+  vm_up
+  wait_firstboot
+
+  step "Copying the working tree's config/ to the VM (~/$worktree_dir)"
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  tar -C "$repo" --exclude='*.retry' -cz config \
+    | ssh "${S[@]}" "$vm_user@127.0.0.1" "rm -rf ~/$worktree_dir && mkdir ~/$worktree_dir && tar -xz -C ~/$worktree_dir"
+  ok "Copied"
+
+  step "Applying the config (config/apply.sh --no-pull)"
+  vm_sudo "$apply" || die "config/apply.sh failed (output above)."
+  ok "Config applied"
+
+  step "Applying it again: nothing should change"
+  out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
+  if grep -Eq 'changed=[1-9]' <<<"$out"; then
+    grep -E '^(changed|TASK)' <<<"$out" | grep -B1 '^changed' >&2 || true
+    warn "The second run changed things (above), so some task is not idempotent."
+  else
+    ok "Second run changed nothing"
+  fi
+
+  step "Rebooting to check the result comes up"
+  vm_reboot
+  state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
+  [[ $state == running ]] || {
+    ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl --failed --no-pager >&2 || true
+    die "After applying the config, systemd is '$state' (failed units above)."
+  }
+  ok "systemd: running, no failed units"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet sddm || die "sddm (login screen) is not active."
+  ok "sddm (login screen) is active"
+
+  vm_down
+  ok "Config applied cleanly. See it with: vm/test-vm.sh boot"
 }
 
 do_boot() {
   local show=${gui:-1}
-  [[ -f $disk && -f $vars ]] || die "No installed VM disk. Run: autoinstall/test-vm.sh install"
+  [[ -f $disk && -f $vars ]] || die "No installed VM disk. Run: vm/test-vm.sh install"
   need qemu-system-x86_64
   find_ovmf
   qemu_base "$disk" "$show"
   step "Booting the installed system"
   info "Log in as $(env_value USER_NAME jack) (password '$test_password' for a test install)"
-  info "SSH from another terminal: autoinstall/test-vm.sh ssh"
+  info "SSH from another terminal: vm/test-vm.sh ssh"
   info "Changes persist on $disk until the next install"
   exec "${Q[@]}"
 }
@@ -407,7 +480,7 @@ do_live() {
 }
 
 do_ssh() {
-  [[ -f $key ]] || die "No test key yet. Run: autoinstall/test-vm.sh install"
+  [[ -f $key ]] || die "No test key yet. Run: vm/test-vm.sh install"
   ssh_opts
   exec ssh "${S[@]}" -o BatchMode=no "$(env_value USER_NAME jack)@127.0.0.1" "${ssh_args[@]}"
 }
@@ -415,9 +488,10 @@ do_ssh() {
 case $cmd in
   install) do_install ;;
   check)   do_check ;;
+  config)  do_config ;;
   all)     do_install
-           if [[ -n $stick_dev ]]; then info "Skipping check (--stick: the test key is not on that install)"
-           else do_check; fi ;;
+           if [[ -n $stick_dev ]]; then info "Skipping check and config (--stick: the test key is not on that install)"
+           else do_check; do_config; fi ;;
   boot)    do_boot ;;
   live)    do_live ;;
   ssh)     do_ssh ;;

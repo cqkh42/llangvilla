@@ -1,15 +1,9 @@
-name: Lint autoinstall scripts
+name: Lint
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'autoinstall/**'
-      - '.github/workflows/lint-autoinstall.yml'
   pull_request:
-    paths:
-      - 'autoinstall/**'
-      - '.github/workflows/lint-autoinstall.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ShellCheck
-        run: shellcheck autoinstall/*.sh
+        run: shellcheck autoinstall/*.sh config/*.sh vm/*.sh
 
       - name: Env template parses as bash
         run: bash -n autoinstall/autoinstall.env.example
@@ -38,3 +32,24 @@ jobs:
           bash autoinstall/install.sh --check /tmp/ci.env
           # and the raw template must be rejected (placeholders left)
           ! bash autoinstall/install.sh --check "$tmpl"
+
+  config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install linters
+        run: pip install --user ansible ansible-lint yamllint
+
+      - name: yamllint
+        run: yamllint .
+
+      - name: ansible-lint
+        run: ansible-lint config/ansible
+
+      - name: Playbook syntax
+        working-directory: config/ansible
+        env:
+          ANSIBLE_CONFIG: ansible.cfg
+        run: ansible-playbook --syntax-check site.yml

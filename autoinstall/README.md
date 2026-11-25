@@ -1,8 +1,8 @@
 # Zero-touch Arch Linux USB (Ventoy + custom ISO + pacstrap)
 
-**End goal:** plug a USB stick into the desktop, boot it, walk away. About 15-25 minutes later the machine powers itself off with Arch Linux installed: your user, your Wi-Fi, key-only SSH, KDE Plasma, btrfs (or ext4), systemd-boot, and a first-boot `ansible-pull` of this repo. Unplug the stick, power on, log in.
+**End goal:** plug a USB stick into the desktop, boot it, walk away. About 15-25 minutes later the machine powers itself off with Arch Linux installed: your user, your Wi-Fi, key-only SSH, KDE Plasma, btrfs (or ext4), systemd-boot, and a first-boot hook that hands over to the config. Unplug the stick, power on, log in.
 
-Everything can be tested in a VM first, with no stick and no real hardware (section 7). Section 13 lists the gotchas specific to this setup.
+This guide is **part 1** of the repo: getting a box to a clean slate. Personalising it is part 2 ([`config/README.md`](../config/README.md)), which also runs on its own later, without the stick. Trying both in a VM is part 3 ([`vm/README.md`](../vm/README.md)). Section 13 lists the gotchas specific to this setup.
 
 ---
 
@@ -17,7 +17,6 @@ Files in this folder:
 | `install.sh` | Runs on the live ISO. Partitions, runs `pacstrap`, configures the system, powers off. `install.sh --check FILE` validates a config anywhere |
 | `packages.txt` | The package list for the installed system (in git; copied onto the stick) |
 | `autoinstall.env.example` | Template for the stick's `autoinstall.env` (placeholders only, never commit real values) |
-| `test-vm.sh` | Installs into a QEMU VM and checks the result; also boots the installed VM to look around |
 
 What ends up on the stick:
 
@@ -36,7 +35,7 @@ Boot sequence on the target machine:
 1. Ventoy menu -> auto-boots `arch-autoinstall.iso`.
 2. The Arch live environment logs in as root and automatically runs `/root/install.sh`.
 3. `install.sh` finds the stick's config folder and validates it, gets online (cable or Wi-Fi), refreshes the keyring and checks every package name exists, picks the target disk and confirms (section 8), then partitions (GPT, EFI + btrfs subvolumes).
-4. `pacstrap` installs the packages; the script writes fstab, locale, hostname, user + password hash, sudo, Wi-Fi profile, SSH keys, zram swap, the first-boot `ansible-pull` service and systemd-boot entries; logs go back to the stick and the machine powers off.
+4. `pacstrap` installs the packages; the script writes fstab, locale, hostname, user + password hash, sudo, Wi-Fi profile, SSH keys, zram swap, the first-boot hook and systemd-boot entries; logs go back to the stick and the machine powers off.
 
 Nothing is erased until the config, network, keyring and package list have all checked out.
 
@@ -49,11 +48,11 @@ Nothing is erased until the config, network, keyring and package list have all c
 | Build computer | Linux with Docker and internet (Arch, or any distro) |
 | Target machine | UEFI desktop, at least 40 GB disk, Secure Boot off |
 | Filesystem / bootloader | btrfs with subvolumes (or `ROOT_FS=ext4`); systemd-boot |
-| Desktop | KDE Plasma (Wayland) with SDDM, themed by `ansible/roles/sddm` |
+| Desktop | KDE Plasma (Wayland) with SDDM; apps, theming and settings come from the config (part 2) |
 | Region | `Europe/London`, `en_GB.UTF-8`, console keymap `uk`, desktop layout `gb` |
 | Identity | User `jack`, hostname `optiplex` |
 | SSH | `sshd` enabled, keys from `https://github.com/cqkh42.keys`, password login off |
-| First boot | `ansible-pull` of `ansible/site.yml` from this repo |
+| First boot | Clones this repo to `/opt/llangvilla` and runs `config/apply.sh` (section 10b) |
 | Not covered | Disk encryption, Secure Boot signing, dual boot |
 
 ---
@@ -86,7 +85,7 @@ sudo systemctl enable --now docker
 sudo usermod -aG kvm "$USER"
 ```
 
-`test-vm.sh` finds the UEFI firmware by itself (set `OVMF_CODE` and `OVMF_VARS` if it can't). Sanity-check Docker with `sudo docker run --rm hello-world`.
+`vm/test-vm.sh` finds the UEFI firmware by itself (set `OVMF_CODE` and `OVMF_VARS` if it can't). Sanity-check Docker with `sudo docker run --rm hello-world`.
 
 Why Docker even on Arch? It gives a clean, current Arch with `archiso` for every build, without installing build tooling on your machine.
 
@@ -127,7 +126,9 @@ There are two inputs. Neither needs a VM or an interactive installer.
 
 ### 5a. `packages.txt` (in git)
 
-The package list for the installed system: Plasma, PipeWire, open-source graphics, Bluetooth, tools. Edit it in the repo and commit; it is copied onto the stick on every `build-usb.sh` run (and onto the test stick by `test-vm.sh`), so no ISO rebuild is needed. The installer always adds what the system needs to boot and what your settings imply (base, kernels, microcode, NetworkManager, btrfs-progs, openssh, git + ansible). Every name is checked against the repositories **before** the disk is touched, so a typo stops the install safely.
+The clean-slate package list: Plasma and SDDM, PipeWire, open-source graphics, Bluetooth, snapshot tooling, a few base tools. Edit it in the repo and commit; it is copied onto the stick on every `build-usb.sh` run (and onto the test stick by `vm/test-vm.sh`), so no ISO rebuild is needed. The installer always adds what the system needs to boot and what your settings imply (base, kernels, microcode, NetworkManager, btrfs-progs, openssh, git). Every name is checked against the repositories **before** the disk is touched, so a typo stops the install safely.
+
+Keep it to what the box needs to boot to a usable desktop on this hardware. Apps and anything you'll want to change on the live machine belong in the config (`config/ansible/roles/packages`), because changing `packages.txt` only takes effect on the next reinstall.
 
 `sddm` and `bluetooth` are enabled automatically when their packages are in the list.
 
@@ -220,41 +221,7 @@ udisksctl unmount -b "$(findmnt -no SOURCE "$V")"
 
 ## 7. Test in a VM
 
-`test-vm.sh` runs the whole install in a QEMU VM with UEFI firmware, a blank 60 GB virtual disk and a small virtual USB stick holding test config. It needs no real stick, and touches nothing outside `~/.cache/llangvilla/vm/`. Do this after every change to `install.sh` or `packages.txt`, and before trusting a stick with real hardware.
-
-```bash
-autoinstall/test-vm.sh                # = install, then check
-```
-
-- **install:** creates a fresh disk, writes a test `autoinstall.env` (your template with test values: password `test`, a generated SSH key, no countdown, `ON_FAILURE=poweroff`, ansible-pull off), boots the newest ISO, waits for the VM to power off, then copies the installer's logs to `~/.cache/llangvilla/vm/logs/`. 10-25 minutes with KVM.
-- **check:** boots the installed disk headless and checks over SSH: no failed units, sudo, hostname, full name, btrfs subvolumes and fstab, the ESP, systemd-boot and an entry per kernel, timezone, locale, zram swap, NetworkManager, sshd, SDDM running, root locked, Wi-Fi profile mode 600, and (from the host) that SSH refuses passwords. It then powers the VM off.
-
-By default the **working tree's** `install.sh` and `packages.txt` go on the test stick and the baked-in installer hands over to them, so changes can be tested without rebuilding the ISO. `--baked` tests the copy inside the ISO instead.
-
-Looking around (the part you will use most):
-
-```bash
-autoinstall/test-vm.sh boot           # boot the installed VM in a window: the real SDDM login (user jack, password test)
-autoinstall/test-vm.sh ssh            # SSH into it from another terminal (port 2222)
-autoinstall/test-vm.sh live           # boot just the ISO in a window, with a scratch disk: a root shell on the live system
-```
-
-The installed VM disk keeps your changes until the next `install`, so you can try playbook changes on it by hand (`sudo ansible-pull -U https://github.com/cqkh42/llangvilla.git -C my-branch ansible/site.yml`).
-
-Useful options:
-
-| Option | Effect |
-|---|---|
-| `--gui` | Show the VM window during `install`/`check` (watch the installer) |
-| `--ansible` | Keep the first-boot `ansible-pull`; `check` waits for it and its reboot. It pulls the repo's default branch, or `ANSIBLE_PULL_BRANCH` from the env |
-| `--env FILE` | Use another env as the base, e.g. your real one (test overrides still apply) |
-| `--stick /dev/sdX` | Install from the **real** stick, exactly as the OptiPlex would (sudo needed, stick unmounted). Its own env is used, so check with `boot` afterwards. A pinned `TARGET_DISK` doesn't exist in the VM, so the installer stops safely: set `TARGET_DISK=auto` while testing this way |
-| `--iso FILE`, `--disk-size GB`, `--timeout MIN` | What they say |
-| `clean` | Delete the VM files (logs are kept) |
-
-Without `/dev/kvm` access the VM falls back to software emulation, which is very slow (section 2 adds you to the `kvm` group).
-
-**In CI:** `.github/workflows/vm-test.yml` builds the ISO and runs `test-vm.sh all` on a GitHub runner (which has KVM), on demand only for now (Actions tab, "VM install test", optionally with ansible). Installer logs are uploaded as an artifact. A weekly schedule will be restored once it passes reliably (issue #11): because Arch is a rolling release, a scheduled run catches breakage that no commit here caused.
+Moved to [`vm/README.md`](../vm/README.md): `vm/test-vm.sh` installs from the working tree into a QEMU VM, checks the base system, then applies `config/` and checks again. Do this after every change to `install.sh` or `packages.txt`, and before trusting a stick with real hardware.
 
 ---
 
@@ -268,7 +235,7 @@ Without `/dev/kvm` access the VM falls back to software emulation, which is very
    - A **blank** disk gets the `CONFIRM_SECONDS` countdown (any key aborts).
    - A disk that **already has partitions or a filesystem** (a reinstall, or the stick left in by mistake) waits until you type `YES`. Anything else aborts without erasing. `NONBLANK_DISK=wipe` turns this off; don't leave it on.
 6. Walk away. When it says `INSTALL COMPLETE`, the machine powers off.
-7. **Remove the stick** and power on. If you configured `ansible-pull`, the first boot runs the playbook (console text for a few minutes) and reboots by itself once. The second boot lands on the SDDM login.
+7. **Remove the stick** and power on. If `CONFIG_REPO_URL` is set, the first boot hands over to the config (console text for a few minutes) and reboots by itself once. The second boot lands on the SDDM login.
 
 If Ventoy hangs at boot: restart, select the Arch ISO manually and use Ventoy's **GRUB2 mode** (press `F1` in the Ventoy menu for the key combo).
 
@@ -276,7 +243,7 @@ If Ventoy hangs at boot: restart, select the Arch ISO manually and use Ventoy's 
 
 ## 9. Verify the installed system
 
-`test-vm.sh check` runs these automatically in the VM. On the real machine:
+`vm/test-vm.sh check` runs these automatically in the VM. On the real machine:
 
 ```bash
 systemctl --failed                  # ideally empty
@@ -288,8 +255,8 @@ hostnamectl                         # hostname 'optiplex'
 getent passwd jack                  # full name in the 5th field
 sudo sshd -T | grep -i passwordauth # 'no' if a key was installed
 swapon --show                       # zram0
-systemctl status ansible-pull-firstboot.service
-journalctl -u ansible-pull-firstboot.service -b   # the playbook's output
+systemctl status llangvilla-firstboot.service
+journalctl -u llangvilla-firstboot.service -b   # the config's first run
 ```
 
 ---
@@ -313,30 +280,32 @@ sudo systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
 `snap-pac` then snapshots before and after every `pacman` transaction. The installer removes `subvolid=` from fstab so a rollback still mounts. Caveat: `/boot` (the EFI partition) is not in snapshots, so after rolling back root, kernels in `/boot` can be newer than the restored modules. Use `linux-lts` as your fallback and reinstall kernels after a rollback.
 
-### 10b. First-boot `ansible-pull` (built in)
+### 10b. The first-boot hook (hand-over to the config)
 
-Set `ANSIBLE_PULL_URL`, `ANSIBLE_PLAYBOOK` and optionally `ANSIBLE_PULL_BRANCH` in `autoinstall.env`. The installer adds `git` and `ansible`, writes `/etc/systemd/system/ansible-pull-firstboot.service` and enables it together with `NetworkManager-wait-online.service`, so `network-online.target` genuinely waits for the network.
+This is the only link between the installer and the config. Set `CONFIG_REPO_URL`, optionally `CONFIG_REPO_BRANCH`, and `CONFIG_ENTRYPOINT` (default `config/apply.sh`) in `autoinstall.env`. The installer adds `git`, writes `/usr/local/lib/llangvilla/firstboot.sh` and `llangvilla-firstboot.service`, and enables the unit together with `NetworkManager-wait-online.service`, so `network-online.target` genuinely waits for the network.
 
-**When it runs** is controlled by `ANSIBLE_BEFORE_LOGIN`:
+On first boot the unit clones the repo to `/opt/llangvilla` and runs the entrypoint from it. It knows nothing about Ansible or what the entrypoint does: that is the config's business (`config/README.md`). The checkout stays, so later runs are just `sudo /opt/llangvilla/config/apply.sh`.
 
-- `1` (default): the unit is ordered `Before=display-manager.service`, so SDDM does not start until the playbook has finished. If the playbook fails, SDDM still starts, no "done" marker is written, and the next boot tries again.
+**When it runs** is controlled by `FIRSTBOOT_BEFORE_LOGIN`:
+
+- `1` (default): the unit is ordered `Before=display-manager.service`, so SDDM does not start until the config has been applied. If it fails, SDDM still starts, no "done" marker (`/var/lib/llangvilla/firstboot.done`) is written, and the next boot tries again.
 - `0`: it runs in the background while the login screen is already showing, and retries every 60 seconds until it succeeds.
 
-**Reboot after success:** with `ANSIBLE_REBOOT_AFTER=1` (default) the machine reboots once when the playbook succeeds. The done marker is written *before* the reboot, so it can't loop, and a failed run never reboots. Using it with `ANSIBLE_BEFORE_LOGIN=0` isn't recommended (it could reboot while someone is logged in).
+**Reboot after success:** with `FIRSTBOOT_REBOOT_AFTER=1` (default) the machine reboots once when the hook succeeds. The done marker is written *before* the reboot, so it can't loop, and a failed run never reboots. Using it with `FIRSTBOOT_BEFORE_LOGIN=0` isn't recommended (it could reboot while someone is logged in).
 
-Read section 13 before relying on it, in particular the rules for a playbook that runs before login.
+An `autoinstall.env` from before this hook was generic still has `ANSIBLE_*` settings; `install.sh --check` rejects it with a message naming the new settings.
 
 ### 10c. Nvidia graphics
 
-The stick installs open-source drivers (nouveau), which gives a working desktop. After install: `sudo pacman -S nvidia-open nvidia-utils` and reboot. Put this in Ansible if you need it.
+The stick installs open-source drivers (nouveau), which gives a working desktop. After install: `sudo pacman -S nvidia-open nvidia-utils` and reboot. Put this in the config (`config/`) if you need it.
 
 ---
 
 ## 11. Maintenance
 
-- **Changing packages:** edit `packages.txt`, run `test-vm.sh`, commit, re-run `build-usb.sh /dev/sdX` to refresh the stick. No ISO rebuild.
+- **Changing packages:** first decide which list it belongs in (section 5a). For the base: edit `packages.txt`, run `vm/test-vm.sh`, commit, re-run `build-usb.sh /dev/sdX` to refresh the stick. No ISO rebuild. Everything else: `config/README.md`.
 - **Changing Wi-Fi, user, hostname, disk:** edit `autoinstall.env` on the stick and re-run `install.sh --check` on it.
-- **Changing the installer:** edit `install.sh`, run `test-vm.sh` (it uses your working copy), commit, then `build-usb.sh /dev/sdX` rebuilds the ISO automatically because `install.sh` changed.
+- **Changing the installer:** edit `install.sh`, run `vm/test-vm.sh` (it uses your working copy), commit, then `build-usb.sh /dev/sdX` rebuilds the ISO automatically because `install.sh` changed.
 - **Rebuilding the ISO** every few months (`--rebuild`) keeps the live environment's kernel, firmware and tools fresh for newer hardware. The installed system is current either way, since `pacstrap` uses the live mirrors and the installer refreshes the keyring first.
 
 ---
@@ -364,44 +333,32 @@ Every run (including failures) leaves `arch-autoinstall/logs/install-*.log` and 
 | No boot entry in the firmware menu | The installer falls back to `\EFI\BOOT\BOOTX64.EFI`, which firmware lists as the disk itself. Run `sudo bootctl install` once booted. |
 | Wi-Fi not connected after install | `nmcli device wifi connect 'SSID' password 'PASS'`; the profile is `/etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection` (mode 600). |
 | Can't SSH in | Key login only by default. Check `~jack/.ssh/authorized_keys`, and that `SSH_KEYS_URL` served your key at install time (the log says how many were installed). |
-| First-boot ansible keeps failing | `journalctl -u ansible-pull-firstboot.service -b`. Usually a task that needs a desktop session, or no network yet. See section 13. Test it in the VM with `test-vm.sh --ansible`. |
-| `test-vm.sh`: "left no status" | The installer stopped before finding the test stick, or hung at a prompt. Re-run with `--gui` to watch it. |
-| `test-vm.sh` is extremely slow | No KVM (it warns). Join the `kvm` group (section 2). |
+| First-boot hook keeps failing | `journalctl -u llangvilla-firstboot.service -b`. A clone failure is the hook's (network, URL, branch); anything after that is the config's, see `config/README.md`. |
+| VM test problems | `vm/README.md`. |
 
 ---
 
 ## 13. Gotchas specific to this setup
 
-**1. Playbook rules for Arch.** `ansible/site.yml` targets Arch:
+**1. The config is a separate part.** What the first boot (and every later run) applies, and the rules it must follow because it runs before login, are in `config/README.md`.
 
-- Use `community.general.pacman` for packages. Arch names differ from other distros (`openssh`, `python-*`, `base-devel`).
-- AUR packages need an AUR helper (`paru` or `yay`) built and run **as a normal user**, never root.
-- `ansible-pull` runs as **root** from systemd. Use `become_user: jack` for user-level tasks.
-- The Arch `ansible` package includes the common collections.
-- Test the playbook in the VM (`test-vm.sh --ansible`, or by hand in `test-vm.sh boot`) before the real machine.
+**2. Failure behaviour depends on `FIRSTBOOT_BEFORE_LOGIN`.** With `1`, a failing hook is attempted once per boot (SDDM then starts anyway). With `0`, it retries every 60 seconds until it passes. The "done" marker is only written on success.
 
-**2. Failure behaviour depends on `ANSIBLE_BEFORE_LOGIN`.** With `1`, a failing playbook is attempted once per boot (SDDM then starts anyway). With `0`, it retries every 60 seconds until it passes. The "done" marker is only written on success.
-
-**3. With `ANSIBLE_BEFORE_LOGIN=1` the first boot is slow.** Console text for several minutes (up to 30, then systemd gives up and SDDM starts regardless). Don't power off during it.
+**3. With `FIRSTBOOT_BEFORE_LOGIN=1` the first boot is slow.** Console text for several minutes (the config installs its own tools, then applies; up to 30, then systemd gives up and SDDM starts regardless). Don't power off during it.
 
 **4. The repo must be public.** The unit clones over HTTPS with no credentials.
 
-**5. KDE Plasma is what `packages.txt` says.** `plasma-meta` plus a few apps. Desktop settings belong in KDE config files written by Ansible.
+**5. KDE Plasma is what `packages.txt` says.** `plasma-meta`, SDDM, a terminal and a file manager. Apps and desktop settings belong in the config.
 
 **6. SSH is key-only when a key was installed, and Arch has no firewall.** If no key could be fetched, password login stays on and the install log warns about it.
 
 **7. Same hostname on every machine.** One env file means one hostname. Change `HOST_NAME` per machine.
 
-**8. ext4 vs btrfs.** If the playbook or backup tooling assumes ext4, set `ROOT_FS=ext4`. With ext4, section 10a doesn't apply.
+**8. ext4 vs btrfs.** If the config or backup tooling assumes ext4, set `ROOT_FS=ext4`. With ext4, section 10a doesn't apply.
 
 **9. Secure Boot and Ventoy.** It must be off: the Arch ISO and systemd-boot are unsigned.
 
-**10. Things a before-login playbook must not do.** The run happens before any user session exists:
-
-- **Don't restart or start `sddm` / `display-manager` from the playbook** (for example in a handler). SDDM is waiting for the playbook to finish, so this deadlocks until the 30-minute timeout. Just write the config; SDDM reads it when it starts. If you must trigger something, use `systemctl restart --no-block`.
-- **No tasks that need a logged-in desktop session** (user dconf, user systemd units, `loginctl`, `kwriteconfig6` against a running session). Writing files into `/etc` or `/home/jack/.config` is fine.
-- **Don't reboot from the playbook.** The unit reboots once by itself after a successful run. A reboot from inside the playbook ends the run before the done marker is written, so it would run again.
-- **SDDM config goes in `/etc/sddm.conf.d/*.conf`**, not `/etc/sddm.conf`.
+**10. The config runs before login on first boot.** So it must not restart SDDM or reboot; the full list is in `config/README.md`.
 
 ---
 
