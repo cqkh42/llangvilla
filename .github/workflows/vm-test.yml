@@ -2,8 +2,9 @@ name: VM install test
 
 # Full end-to-end test: build the ISO, install Arch into a QEMU VM from a test
 # stick, boot the result and run the checks in autoinstall/test-vm.sh.
-# Takes roughly 30-45 minutes. Runs weekly (Arch is a rolling release, so things
-# break without any change here) and on demand from the Actions tab.
+# Takes roughly 30-45 minutes. Run it on demand from the Actions tab.
+# Manual only for now; the weekly schedule comes back once it passes reliably
+# (cqkh42/llangvilla#11).
 on:
   workflow_dispatch:
     inputs:
@@ -11,8 +12,6 @@ on:
         description: "Also run the first-boot ansible-pull (default branch)"
         type: boolean
         default: false
-  schedule:
-    - cron: "23 3 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -254,7 +254,7 @@ Useful options:
 
 Without `/dev/kvm` access the VM falls back to software emulation, which is very slow (section 2 adds you to the `kvm` group).
 
-**In CI:** `.github/workflows/vm-test.yml` builds the ISO and runs `test-vm.sh all` on a GitHub runner (which has KVM) weekly and on demand (Actions tab, "VM install test", optionally with ansible). Installer logs are uploaded as an artifact. Because Arch is a rolling release, the weekly run catches breakage that no commit here caused.
+**In CI:** `.github/workflows/vm-test.yml` builds the ISO and runs `test-vm.sh all` on a GitHub runner (which has KVM), on demand only for now (Actions tab, "VM install test", optionally with ansible). Installer logs are uploaded as an artifact. A weekly schedule will be restored once it passes reliably (issue #11): because Arch is a rolling release, a scheduled run catches breakage that no commit here caused.
 
 ---
 
