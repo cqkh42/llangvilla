@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
-# Prepares autoinstall/README.md sections 2-3:
-#   - downloads the Ubuntu desktop ISO (verified against Ubuntu's SHA256SUMS)
+# Builds the zero-touch Arch Linux USB stick (autoinstall/README.md sections 4-7):
+#   - builds the custom Arch ISO in an Arch Docker container (build.sh + install.sh),
+#     reusing the cached ISO unless install.sh/build.sh changed or --rebuild is given
 #   - downloads + unpacks Ventoy (verified against a pinned SHA-256)
-#   - optionally builds the whole stick (ERASES it): installs Ventoy, mounts it,
-#     then copies the ISO, ventoy.json and the raw user-data template onto it
-#     (README sections 3-4). Filling in the placeholders (section 5) is still manual.
+#   - optionally builds the stick (ERASES it if Ventoy is not already on it):
+#     installs Ventoy, mounts it, then copies the ISO, ventoy.json, the
+#     autoinstall.env template and your archinstall JSON onto it.
+#     Filling in the autoinstall.env placeholders is still manual.
 #
-# Usage (disk is optional; without it the script only downloads/unpacks):
-#   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb          # "_" fills $0, so the disk is $1
-#   DISK=/dev/sdb bash -c "$(curl -fsSL "$URL")"       # or via the environment
-#   ... add --force to wipe and reinstall Ventoy (Ventoy2Disk.sh -I)
+# Usage (disk is optional; without it the script only builds/downloads):
+#   autoinstall/build-usb.sh [--rebuild] [--force] [/dev/sdX]   # from a checkout
+#   DISK=/dev/sdb bash -c "$(curl -fsSL "$URL")"                # or straight from GitHub
+#   bash -c "$(curl -fsSL "$URL")" _ /dev/sdb                   # "_" fills $0, so the disk is $1
 #
-# Re-running on a stick that already has Ventoy (from a previous flash) is safe:
-# Ventoy is kept, the ISO is verified and only re-copied if missing or bad,
-# ventoy.json is left alone, and user-data is ALWAYS replaced by a fresh template.
+# archinstall JSON: user_configuration.json and user_credentials.json are copied
+# from $CONFIG_DIR (default ~/.cache/llangvilla/generated) when present. Generate
+# them once in a VM (README section 5).
+#
+# Re-running on a stick that already has Ventoy is safe: Ventoy is kept, the ISO
+# is only re-copied if it differs, ventoy.json and autoinstall.env are left alone,
+# and the JSON files are refreshed from $CONFIG_DIR.
 #
 # Everything is cached in $XDG_CACHE_HOME/llangvilla (default ~/.cache/llangvilla).
-# Logs go to stderr; the only stdout is two shell-evaluable lines at the very end:
-#   eval "$(bash -c "$(curl -fsSL "$URL")" _ /dev/sdb)"   # sets $ISO, $VENTOY_DIR and $V
-# ($V is the mount point of the freshly made Ventoy partition, if a disk was given.
-#  After installing, the script re-reads the partition table and mounts the stick,
-#  so there is no need to unplug and replug it.)
+# Logs go to stderr; the only stdout is shell-evaluable lines at the very end:
+#   eval "$(autoinstall/build-usb.sh /dev/sdb)"   # sets $ISO, $VENTOY_DIR and $V
+# ($V is the mount point of the Ventoy partition, if a disk was given.)
 set -euo pipefail
 
 # Send all stdout (ours and every child process's) to stderr, keeping the real
-# stdout on fd 3 for the final result. This stops Ventoy's output from being
-# captured by an `eval "$(...)"` wrapper.
+# stdout on fd 3 for the final result. This stops Ventoy's and Docker's output
+# from being captured by an `eval "$(...)"` wrapper.
 exec 3>&1 1>&2
-
-UBUNTU_VERSION="26.04.1"
-ISO_NAME="ubuntu-${UBUNTU_VERSION}-desktop-amd64.iso"
-ISO_BASE_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}"
 
 # Ventoy publishes its SHA-256 in the release notes, so it is pinned here.
 # To upgrade: bump the version and paste the new linux.tar.gz hash from
@@ -40,12 +40,19 @@ VENTOY_SHA256="a9ffd7bd5e26df486cafff924b8dbcb6caae20cbe2b179a009fe59ae740c7572"
 VENTOY_TARBALL="ventoy-${VENTOY_VERSION}-linux.tar.gz"
 VENTOY_URL="https://github.com/ventoy/Ventoy/releases/download/v${VENTOY_VERSION}/${VENTOY_TARBALL}"
 
-USER_DATA_URL="https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/user-data"
+RAW_BASE="https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall"
+BUILD_FILES=(build.sh install.sh autoinstall.env.example)
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/llangvilla"
-ISO_PATH="${CACHE_DIR}/${ISO_NAME}"
+BUILD_DIR="${CACHE_DIR}/iso-build"        # mounted at /work in the container
+ISO_OUT_DIR="${BUILD_DIR}/out"
+ISO_STAMP="${ISO_OUT_DIR}/.sources.sha256"
+CONFIG_DIR="${CONFIG_DIR:-${CACHE_DIR}/generated}"
 VENTOY_TARBALL_PATH="${CACHE_DIR}/${VENTOY_TARBALL}"
 VENTOY_DIR="${CACHE_DIR}/ventoy-${VENTOY_VERSION}"
+
+STICK_ISO="arch-autoinstall.iso"
+STICK_CFG="arch-autoinstall"
 
 # ---------- pretty logging (colour only when stderr is a terminal) ----------
 if [[ -t 2 ]]; then
@@ -62,13 +69,18 @@ die()  { printf '  %s✖%s %s\n' "$RED" "$RESET" "$*"; exit 1; }
 
 usage() {
   cat <<USAGE
-Usage: fetch-ubuntu-iso.sh [--force] [DISK]
+Usage: build-usb.sh [--rebuild] [--force] [DISK]
 
-  DISK     whole USB disk to build, e.g. /dev/sdb (or set \$DISK).
-           Without it the script only downloads and unpacks.
-           If the stick already has Ventoy it is kept (nothing is erased); the
-           ISO is only re-copied if missing or bad, and user-data is always refreshed.
-  --force  wipe the stick and reinstall Ventoy (Ventoy2Disk.sh -I)
+  DISK       whole USB disk to build, e.g. /dev/sdb (or set \$DISK).
+             Without it the script only builds the ISO and downloads Ventoy.
+             If the stick already has Ventoy it is kept (nothing is erased).
+  --rebuild  rebuild the Arch ISO even if a cached one is up to date
+             (do this about monthly so the ISO's archinstall stays current)
+  --force    wipe the stick and reinstall Ventoy (Ventoy2Disk.sh -I)
+
+Environment:
+  CONFIG_DIR folder holding user_configuration.json and user_credentials.json
+             (default: ${CACHE_DIR}/generated)
 
 Find your stick with:
   lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'
@@ -79,19 +91,30 @@ USAGE
 DISK="${DISK:-}"
 VENTOY_FLAG="-i"
 FORCE=0
+REBUILD=0
 VENTOY_MOUNT=""
 VENTOY_PART=""
 STICK_POPULATED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -f|--force) FORCE=1; VENTOY_FLAG="-I" ;;
-    -h|--help)  usage; exit 0 ;;
-    -*)         usage; die "Unknown option: $1" ;;
-    *)          DISK="$1" ;;
+    -f|--force)   FORCE=1; VENTOY_FLAG="-I" ;;
+    -r|--rebuild) REBUILD=1 ;;
+    -h|--help)    usage; exit 0 ;;
+    -*)           usage; die "Unknown option: $1" ;;
+    *)            DISK="$1" ;;
   esac
   shift
 done
 if [[ -n "$DISK" && "$DISK" != /dev/* ]]; then DISK="/dev/${DISK}"; fi
+
+# Run from a checkout? Then use the scripts next to this one, not GitHub's copy.
+SRC_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  candidate=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  if [[ -f "${candidate}/build.sh" && -f "${candidate}/install.sh" ]]; then
+    SRC_DIR=$candidate
+  fi
+fi
 
 # ---------- helpers ----------
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
@@ -125,6 +148,58 @@ fetch_verified() {
   fi
   mv "$part" "$dest"
   ok "Downloaded and verified ${label}"
+}
+
+# Copy build.sh, install.sh and the env template into BUILD_DIR, from the
+# checkout if we are in one, otherwise from GitHub.
+stage_sources() {
+  local f
+  mkdir -p "$BUILD_DIR"
+  for f in "${BUILD_FILES[@]}"; do
+    if [[ -n "$SRC_DIR" ]]; then
+      cp "${SRC_DIR}/${f}" "${BUILD_DIR}/${f}"
+    else
+      curl -fsSL "${RAW_BASE}/${f}" -o "${BUILD_DIR}/${f}.new" \
+        || { rm -f "${BUILD_DIR}/${f}.new"; die "Could not download ${RAW_BASE}/${f}"; }
+      mv -f "${BUILD_DIR}/${f}.new" "${BUILD_DIR}/${f}"
+    fi
+  done
+  if [[ -n "$SRC_DIR" ]]; then
+    ok "Using scripts from ${SRC_DIR}"
+  else
+    ok "Downloaded scripts from GitHub (main)"
+  fi
+}
+
+# One hash over the files baked into the ISO, so a changed install.sh triggers a rebuild.
+sources_hash() {
+  (cd "$BUILD_DIR" && sha256sum build.sh install.sh) | sha256sum | awk '{print $1}'
+}
+
+latest_iso() {
+  local iso
+  # shellcheck disable=SC2012  # our own fixed-pattern filenames
+  iso=$(ls -1t "${ISO_OUT_DIR}"/arch-autoinstall-*.iso 2>/dev/null | head -n1 || true)
+  printf '%s' "$iso"
+}
+
+build_iso() {
+  local docker=(docker) iso
+  command -v docker >/dev/null || die "Docker is needed to build the ISO (README section 2)"
+  if ! docker info >/dev/null 2>&1; then docker=(sudo docker); fi
+
+  info "Building in an archlinux:latest container (5-15 minutes, lots of output is normal)"
+  rm -f "${ISO_OUT_DIR}"/arch-autoinstall-*.iso
+  # mkarchiso needs root inside the container; hand the output back to us afterwards.
+  "${docker[@]}" run --rm --privileged --pull=always \
+    -v "${BUILD_DIR}":/work archlinux:latest \
+    bash -c "bash /work/build.sh && chown -R $(id -u):$(id -g) /work/out" \
+    || die "ISO build failed. Read the last lines of output above, then re-run"
+
+  iso=$(latest_iso)
+  [[ -n "$iso" ]] || die "Build finished but no ISO appeared in ${ISO_OUT_DIR}"
+  sources_hash > "$ISO_STAMP"
+  ok "Built $(basename "$iso") ($(du -h "$iso" | cut -f1))"
 }
 
 # Light sanity checks that the target is a whole, USB-attached, non-system disk.
@@ -180,7 +255,7 @@ has_ventoy() {
 # partition table is re-read first, so no unplugging is needed.
 # Sets VENTOY_PART and VENTOY_MOUNT on success.
 mount_ventoy() {
-  local disk=$1 rescan=${2:-1} part="" mnt="" i
+  local disk=$1 rescan=${2:-1} part="" mnt=""
   if (( rescan )); then
     sync
     sudo partprobe "$disk" || warn "partprobe failed, carrying on"
@@ -188,7 +263,7 @@ mount_ventoy() {
   fi
 
   # Find this disk's Ventoy partition (give udev a few seconds to create it)
-  for i in {1..20}; do
+  for _ in {1..20}; do
     part=$(lsblk -nrpo NAME,LABEL "$disk" | awk '$2 == "Ventoy" {print $1}')
     part=${part%%$'\n'*}
     if [[ -n "$part" ]]; then break; fi
@@ -213,74 +288,86 @@ mount_ventoy() {
   ok "Ventoy partition ${part} mounted at ${mnt}"
 }
 
-# README section 4, safe to re-run on a stick from a previous flash:
-#   ISO         copied only if missing or not matching the official checksum
-#   ventoy.json written only if missing
-#   user-data   ALWAYS replaced with a fresh template (it is the part that changes)
+# README section 7, safe to re-run on a stick from a previous flash:
+#   arch-autoinstall.iso       copied only if missing or different from the local build
+#   ventoy/ventoy.json         written only if missing
+#   arch-autoinstall/autoinstall.env   template copied only if missing (holds your secrets)
+#   arch-autoinstall/*.json    refreshed from $CONFIG_DIR when present there
 populate_stick() {
-  local v=$1 need_copy=1
-  local iso_dest="${v}/ISO/ubuntu-desktop.iso"
-  local ud_dest="${v}/ventoy/script/user-data"
+  local v=$1 need_copy=1 f
+  local iso_dest="${v}/${STICK_ISO}"
+  local cfg_dest="${v}/${STICK_CFG}"
   local json_dest="${v}/ventoy/ventoy.json"
-  mkdir -p "${v}/ISO" "${v}/ventoy/script"
+  mkdir -p "$cfg_dest" "${v}/ventoy"
 
   # --- ISO ---
   if [[ -f "$iso_dest" ]]; then
-    if [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]]; then
+    if [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO")" ]]; then
       info "An ISO is already on the stick, verifying (reads the whole file, can take a minute or two)..."
-      if [[ "$(sha256_of "$iso_dest")" == "$iso_sha256" ]]; then
+      if [[ "$(sha256_of "$iso_dest")" == "$(sha256_of "$ISO")" ]]; then
         need_copy=0
-        ok "ISO on the stick matches the official checksum, not copying"
+        ok "ISO on the stick matches the local build, not copying"
       else
-        warn "ISO on the stick has the right size but a bad checksum, replacing it"
+        warn "ISO on the stick differs from the local build, replacing it"
       fi
     else
-      warn "ISO on the stick is a different size (old release or partial copy), replacing it"
+      warn "ISO on the stick is a different size (older build or partial copy), replacing it"
     fi
   fi
   if (( need_copy )); then
-    info "Copying ISO ($(du -h "$ISO_PATH" | cut -f1), this can take a few minutes)..."
+    info "Copying ISO ($(du -h "$ISO" | cut -f1), this can take a few minutes)..."
     if command -v rsync >/dev/null; then
-      rsync --no-perms --no-owner --no-group --info=progress2 "$ISO_PATH" "$iso_dest" \
+      rsync --no-perms --no-owner --no-group --info=progress2 "$ISO" "$iso_dest" \
         || die "Copying the ISO to the stick failed"
     else
-      cp "$ISO_PATH" "$iso_dest" || die "Copying the ISO to the stick failed"
+      cp "$ISO" "$iso_dest" || die "Copying the ISO to the stick failed"
     fi
     info "Flushing to the stick..."
     sync
-    [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO_PATH")" ]] \
+    [[ "$(stat -c %s "$iso_dest")" == "$(stat -c %s "$ISO")" ]] \
       || die "Copied ISO is a different size from the original"
     ok "ISO copied to ${iso_dest}"
   fi
 
-  # --- user-data: always replaced. Download first so a failed download
-  #     never destroys the existing copy. ---
-  if [[ -f "$ud_dest" ]]; then
-    info "Replacing the existing user-data with a fresh template"
-  else
-    info "Fetching the user-data template"
-  fi
-  curl -fsSL "$USER_DATA_URL" -o "${ud_dest}.new" \
-    || { rm -f "${ud_dest}.new"; die "Could not download ${USER_DATA_URL} (existing user-data left untouched)"; }
-  mv -f "${ud_dest}.new" "$ud_dest"
-  ok "user-data written to ${ud_dest}"
-
   # --- ventoy.json: only if missing ---
   if [[ -f "$json_dest" ]]; then
-    ok "ventoy.json already present, leaving it alone"
+    if grep -q "\"/${STICK_ISO}\"" "$json_dest"; then
+      ok "ventoy.json already present, leaving it alone"
+    else
+      warn "ventoy.json exists but does not auto-boot /${STICK_ISO}. Merge in README section 7c by hand"
+    fi
   else
-    cat > "$json_dest" <<'JSON'
+    cat > "$json_dest" <<JSON
 {
-  "auto_install": [
-    {
-      "image": "/ISO/ubuntu-desktop.iso",
-      "template": "/ventoy/script/user-data"
-    }
+  "control": [
+    { "VTOY_MENU_TIMEOUT": "10" },
+    { "VTOY_DEFAULT_IMAGE": "/${STICK_ISO}" }
   ]
 }
 JSON
-    ok "ventoy.json written"
+    ok "ventoy.json written (auto-boots /${STICK_ISO} after 10 s)"
   fi
+
+  # --- autoinstall.env: template only if missing, never overwrite real values ---
+  if [[ -f "${cfg_dest}/autoinstall.env" ]]; then
+    ok "autoinstall.env already present, leaving it alone"
+  else
+    cp "${BUILD_DIR}/autoinstall.env.example" "${cfg_dest}/autoinstall.env"
+    ok "autoinstall.env template written"
+  fi
+
+  # --- archinstall JSON from CONFIG_DIR ---
+  for f in user_configuration.json user_credentials.json; do
+    if [[ -f "${CONFIG_DIR}/${f}" ]]; then
+      cp "${CONFIG_DIR}/${f}" "${cfg_dest}/${f}"
+      ok "${f} copied from ${CONFIG_DIR}"
+    elif [[ -f "${cfg_dest}/${f}" ]]; then
+      ok "${f} already on the stick (none in ${CONFIG_DIR} to refresh it from)"
+    else
+      warn "${f} is missing: generate it in a VM (README section 5) into ${CONFIG_DIR}, then re-run"
+    fi
+  done
+  sync
   STICK_POPULATED=1
 }
 
@@ -313,7 +400,7 @@ build_stick() {
     step "Updating files on the stick"
     populate_stick "$VENTOY_MOUNT"
   else
-    warn "Could not mount automatically. Unplug and replug the stick, then do README section 4 by hand"
+    warn "Could not mount automatically. Unplug and replug the stick, then do README section 7 by hand"
   fi
 }
 
@@ -324,23 +411,35 @@ if [[ -n "$DISK" ]]; then required+=(lsblk sudo umount); fi
 for cmd in "${required[@]}"; do
   command -v "$cmd" >/dev/null || die "Missing required command: ${cmd}"
 done
-mkdir -p "$CACHE_DIR"
+mkdir -p "$CACHE_DIR" "$ISO_OUT_DIR"
 info "Cache directory: ${CACHE_DIR}"
 if [[ -n "$DISK" ]]; then
   info "Target disk: ${DISK}"
-  validate_disk "$DISK"   # fail fast, before any big downloads
+  validate_disk "$DISK"   # fail fast, before the long build
 else
-  info "No disk given, will only download and unpack"
+  info "No disk given, will only build the ISO and download Ventoy"
 fi
 
-# ---------- Ubuntu ISO ----------
-step "Ubuntu ${UBUNTU_VERSION} desktop ISO"
-iso_sha256=$(curl -fsSL "${ISO_BASE_URL}/SHA256SUMS" \
-  | awk -v f="$ISO_NAME" '$2 == f || $2 == "*" f {print $1}') \
-  || die "Could not download ${ISO_BASE_URL}/SHA256SUMS"
-[[ -n "$iso_sha256" ]] || die "No checksum for ${ISO_NAME} in SHA256SUMS"
-info "Official SHA-256: ${iso_sha256}"
-fetch_verified "Ubuntu ISO" "${ISO_BASE_URL}/${ISO_NAME}" "$ISO_PATH" "$iso_sha256"
+# ---------- Arch ISO ----------
+step "Arch autoinstall ISO"
+stage_sources
+ISO=$(latest_iso)
+if (( REBUILD )); then
+  info "--rebuild given"
+  build_iso
+elif [[ -z "$ISO" ]]; then
+  info "No cached ISO yet"
+  build_iso
+elif [[ ! -f "$ISO_STAMP" || "$(cat "$ISO_STAMP")" != "$(sources_hash)" ]]; then
+  info "build.sh or install.sh changed since the cached ISO was built"
+  build_iso
+else
+  ok "Cached ISO is up to date: $(basename "$ISO")"
+  if [[ -n "$(find "$ISO" -mtime +30)" ]]; then
+    warn "It is over 30 days old. Consider --rebuild so its archinstall stays current"
+  fi
+fi
+ISO=$(latest_iso)
 
 # ---------- Ventoy ----------
 step "Ventoy ${VENTOY_VERSION}"
@@ -365,17 +464,21 @@ if [[ -n "$DISK" ]]; then build_stick "$DISK"; fi
 
 # ---------- summary ----------
 step "All done"
-ok "ISO:    ${ISO_PATH}"
+ok "ISO:    ${ISO}"
 ok "Ventoy: ${VENTOY_DIR}"
 if [[ -n "$VENTOY_MOUNT" ]]; then
   ok "Stick:  ${VENTOY_MOUNT}"
 fi
 if (( STICK_POPULATED )); then
-  ud="${VENTOY_MOUNT}/ventoy/script/user-data"
-  left=$(grep -c '__[A-Z_]*__' "$ud" || true)
-  warn "${left} lines in user-data still hold placeholders (README section 5):"
-  info "  nano \"${ud}\""
-  info "  grep -n '__' \"${ud}\"    # must print nothing"
+  env_file="${VENTOY_MOUNT}/${STICK_CFG}/autoinstall.env"
+  left=$(grep -c '__[A-Z_]*__' "$env_file" || true)
+  if (( left > 0 )); then
+    warn "${left} lines in autoinstall.env still hold placeholders (README section 7b):"
+    info "  nano \"${env_file}\""
+    info "  grep -n '__' \"${env_file}\"    # must print nothing"
+  else
+    ok "autoinstall.env has no placeholders left"
+  fi
   info "Then flush and unmount:"
   info "  sync && udisksctl unmount -b ${VENTOY_PART}"
 elif [[ -z "$DISK" ]]; then
@@ -383,5 +486,5 @@ elif [[ -z "$DISK" ]]; then
   info "  lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN==\"usb\"'"
 fi
 
-printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO_PATH" "$VENTOY_DIR" >&3
+printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO" "$VENTOY_DIR" >&3
 if [[ -n "$VENTOY_MOUNT" ]]; then printf 'V=%q\n' "$VENTOY_MOUNT" >&3; fi
