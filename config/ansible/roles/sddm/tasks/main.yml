@@ -1,6 +1,15 @@
-- name: Install SDDM and dependencies
+---
+# Themes and configures SDDM. SDDM itself is installed and enabled by the
+# installer (installer/packages.txt), so a box without it is a broken base.
+- name: Check SDDM is installed (it comes from installer/packages.txt)
+  ansible.builtin.stat:
+    path: /usr/share/sddm/themes
+  register: sddm_themes_dir
+  failed_when: not sddm_themes_dir.stat.isdir | default(false)
+
+- name: Install theme dependencies
   community.general.pacman:
-    name: [sddm, kwin, qt6-wayland, qt6-svg, qt6-declarative, unzip]
+    name: [qt6-wayland, qt6-svg, qt6-declarative, unzip]
     state: present
 
 - name: Download theme zip (verified, skipped if unchanged)
@@ -10,6 +19,10 @@
     checksum: "sha256:{{ sddm_theme_sha256 }}"
     mode: "0644"
   notify: Unpack SDDM theme
+
+# The tasks below edit files inside the theme, so unpack it now, not at the end.
+- name: Unpack the theme before patching it
+  ansible.builtin.meta: flush_handlers
 
 - name: Create SDDM config drop-in directory
   ansible.builtin.file:
@@ -24,7 +37,7 @@
     content: |
       [Theme]
       Current={{ sddm_theme_name }}
-      
+
 - name: Configure SDDM greeter (Wayland, remember last user/session)
   ansible.builtin.copy:
     dest: /etc/sddm.conf.d/10-wayland.conf
@@ -37,9 +50,9 @@
       RememberLastUser=true
       RememberLastSession=true
 
-- name: Configure Catpuccin Theme
+- name: Configure Catppuccin theme
   ansible.builtin.copy:
-    dest: /usr/share/sddm/themes/catppuccin-mocha-mauve/theme.conf
+    dest: "/usr/share/sddm/themes/{{ sddm_theme_name }}/theme.conf"
     mode: "0644"
     content: |
       [General]
@@ -50,26 +63,21 @@
       LoginBackground="true"
       Background="backgrounds/wall.png"
       UserIcon="true"
+
 - name: Remove settings button
   ansible.builtin.lineinfile:
-    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/SessionPanel.qml
+    path: "/usr/share/sddm/themes/{{ sddm_theme_name }}/Components/SessionPanel.qml"
     insertafter: '    id: sessionButton'
     line: '    visible: false'
 
 - name: Fix user icon bug
   ansible.builtin.lineinfile:
-    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/LoginPanel.qml
+    path: "/usr/share/sddm/themes/{{ sddm_theme_name }}/Components/LoginPanel.qml"
     insertafter: '.*?defaultIcon.png.*?'
     line: '        visible: userAvatar.status !== Image.Ready'
 
-- name: name element
+- name: Name the avatar element
   ansible.builtin.lineinfile:
-    path: /usr/share/sddm/themes/catppuccin-mocha-mauve/Components/LoginPanel.qml
+    path: "/usr/share/sddm/themes/{{ sddm_theme_name }}/Components/LoginPanel.qml"
     insertafter: '.*?AccountsService/icons.*?'
     line: '        id: userAvatar'
-    
-
-- name: Enable SDDM at boot
-  ansible.builtin.systemd:
-    name: sddm
-    enabled: true

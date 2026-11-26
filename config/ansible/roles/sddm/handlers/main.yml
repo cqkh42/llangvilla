@@ -1,3 +1,4 @@
+---
 - name: Unpack SDDM theme
   ansible.builtin.unarchive:
     src: "{{ sddm_theme_zip }}"

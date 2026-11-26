@@ -8,9 +8,13 @@
 #
 # Config, all on the stick in arch-autoinstall/:
 #   autoinstall.env   settings and secrets (template: autoinstall.env.example)
-#   packages.txt      package list (copied from the repo by build-usb.sh / test-vm.sh)
-#   install.sh        optional: if present, it replaces this baked-in copy (test-vm.sh
+#   packages.txt      package list (copied from the repo by build-usb.sh / vm/test-vm.sh)
+#   install.sh        optional: if present, it replaces this baked-in copy (vm/test-vm.sh
 #                     uses this so installer changes can be tested without an ISO rebuild)
+#
+# The installer builds a clean base system. Personalisation is the config's job
+# (config/README.md); the only link is the first-boot hook (CONFIG_* settings),
+# which clones the repo and runs its entrypoint.
 #
 # No `set -e` on purpose: every step that matters is checked, and a failure drops
 # to a root shell (or powers off with ON_FAILURE=poweroff) instead of vanishing.
@@ -68,8 +72,8 @@ load_env() {
   : "${KERNELS:=linux}" "${EXTRA_PACKAGES:=}"
   : "${USER_NAME:=}" "${REAL_NAME:=}" "${PASSWORD_HASH:=}" "${LOCK_ROOT:=1}"
   : "${ENABLE_SSH:=1}" "${SSH_KEYS_URL:=}" "${SSH_AUTHORIZED_KEYS:=}" "${SSH_PASSWORD_AUTH:=0}"
-  : "${ANSIBLE_PULL_URL:=}" "${ANSIBLE_PULL_BRANCH:=}" "${ANSIBLE_PLAYBOOK:=ansible/site.yml}"
-  : "${ANSIBLE_BEFORE_LOGIN:=1}" "${ANSIBLE_REBOOT_AFTER:=1}"
+  : "${CONFIG_REPO_URL:=}" "${CONFIG_REPO_BRANCH:=}" "${CONFIG_ENTRYPOINT:=config/apply.sh}"
+  : "${FIRSTBOOT_BEFORE_LOGIN:=1}" "${FIRSTBOOT_REBOOT_AFTER:=1}"
   : "${ON_FAILURE:=shell}"
 }
 
@@ -81,7 +85,13 @@ check_config() {
     errs+=("placeholder not filled in: ${line}")
   done < <(grep -nE '^[^#]*__[A-Z_]+__' "$env_file")
 
-  for v in WIFI_HIDDEN LOCK_ROOT ENABLE_SSH SSH_PASSWORD_AUTH ANSIBLE_BEFORE_LOGIN ANSIBLE_REBOOT_AFTER; do
+  # Settings from before the first-boot hook was made generic: fail rather than
+  # silently skipping the config on a stick with an old env file.
+  while IFS= read -r line; do
+    errs+=("${line}: the ANSIBLE_* settings were renamed (CONFIG_REPO_URL, CONFIG_REPO_BRANCH, CONFIG_ENTRYPOINT, FIRSTBOOT_*); see autoinstall.env.example")
+  done < <(grep -nE '^[[:space:]]*ANSIBLE_[A-Z_]+=' "$env_file")
+
+  for v in WIFI_HIDDEN LOCK_ROOT ENABLE_SSH SSH_PASSWORD_AUTH FIRSTBOOT_BEFORE_LOGIN FIRSTBOOT_REBOOT_AFTER; do
     [[ ${!v} == 0 || ${!v} == 1 ]] || errs+=("$v must be 0 or 1 (is '${!v}')")
   done
   [[ $CONFIRM_SECONDS =~ ^[0-9]+$ ]] || errs+=("CONFIRM_SECONDS must be a number of seconds")
@@ -110,9 +120,10 @@ check_config() {
   elif [[ -n $WIFI_PSK ]]; then
     errs+=("WIFI_PSK is set but WIFI_SSID is empty")
   fi
-  [[ $ANSIBLE_PULL_URL != *[[:space:]]* ]] || errs+=("ANSIBLE_PULL_URL must not contain spaces")
-  [[ $ANSIBLE_PULL_BRANCH$ANSIBLE_PLAYBOOK != *[[:space:]]* ]] \
-    || errs+=("ANSIBLE_PULL_BRANCH and ANSIBLE_PLAYBOOK must not contain spaces")
+  [[ $CONFIG_REPO_URL$CONFIG_REPO_BRANCH$CONFIG_ENTRYPOINT != *[[:space:]]* ]] \
+    || errs+=("CONFIG_REPO_URL, CONFIG_REPO_BRANCH and CONFIG_ENTRYPOINT must not contain spaces")
+  [[ $CONFIG_ENTRYPOINT != /* && $CONFIG_ENTRYPOINT != *..* && -n $CONFIG_ENTRYPOINT ]] \
+    || errs+=("CONFIG_ENTRYPOINT must be a path inside the repo (e.g. config/apply.sh)")
 
   if (( ${#errs[@]} )); then
     printf '\033[1;31m[autoinstall] %s has problems:\033[0m\n' "$env_file" >&2
@@ -245,7 +256,7 @@ if grep -q AuthenticAMD /proc/cpuinfo; then UCODE=amd-ucode; fi
 [[ -n $UCODE ]] && PKGS+=("$UCODE")
 [[ $ROOT_FS == btrfs ]] && PKGS+=(btrfs-progs)
 [[ $ENABLE_SSH == 1 ]] && PKGS+=(openssh)
-[[ -n $ANSIBLE_PULL_URL ]] && PKGS+=(git ansible)
+[[ -n $CONFIG_REPO_URL ]] && PKGS+=(git)
 read -ra extra <<<"$EXTRA_PACKAGES"
 PKGS+=("${extra[@]}")
 mapfile -t listed < <(sed -e 's/#.*//' "$CFG/packages.txt" | tr -s '[:space:]' '\n' | grep -v '^$')
@@ -468,12 +479,29 @@ if [[ $ENABLE_SSH == 1 ]]; then
   fi
 fi
 
-# First-boot ansible-pull
-if [[ -n $ANSIBLE_PULL_URL ]]; then
-  pull_args="-U $ANSIBLE_PULL_URL"
-  [[ -n $ANSIBLE_PULL_BRANCH ]] && pull_args+=" -C $ANSIBLE_PULL_BRANCH"
+# First-boot hook: hand over to the config (part 2). The installer knows only how
+# to fetch the repo and which script to run; what that script does is the repo's
+# business. The checkout stays at /opt/llangvilla for later re-runs.
+if [[ -n $CONFIG_REPO_URL ]]; then
+  install -d "$T/usr/local/lib/llangvilla"
+  {
+    echo '#!/bin/bash'
+    echo '# Written by installer/install.sh. Run once by llangvilla-firstboot.service.'
+    echo 'set -euo pipefail'
+    printf 'url=%q branch=%q entry=%q dir=/opt/llangvilla\n' \
+      "$CONFIG_REPO_URL" "$CONFIG_REPO_BRANCH" "$CONFIG_ENTRYPOINT"
+    cat <<'EOF'
+if [[ ! -d $dir/.git ]]; then
+  rm -rf "$dir"
+  git clone ${branch:+--branch "$branch"} "$url" "$dir"
+fi
+exec bash "$dir/$entry"
+EOF
+  } > "$T/usr/local/lib/llangvilla/firstboot.sh"
+  chmod 755 "$T/usr/local/lib/llangvilla/firstboot.sh"
+
   unit_before="" unit_reboot="" unit_extra=""
-  if [[ $ANSIBLE_BEFORE_LOGIN == 1 ]]; then
+  if [[ $FIRSTBOOT_BEFORE_LOGIN == 1 ]]; then
     # Run to completion BEFORE the login screen (SDDM) starts. A failure does not
     # block SDDM; the unit simply tries again on the next boot.
     unit_before="Before=display-manager.service"
@@ -483,20 +511,21 @@ if [[ -n $ANSIBLE_PULL_URL ]]; then
     unit_extra=$'Restart=on-failure\nRestartSec=60'
   fi
   # Reboot once after a SUCCESSFUL run. The done-marker is written first, so this can never loop.
-  [[ $ANSIBLE_REBOOT_AFTER == 1 ]] && unit_reboot="ExecStartPost=/usr/bin/systemctl reboot --no-block"
-  cat > "$T/etc/systemd/system/ansible-pull-firstboot.service" <<EOF
+  [[ $FIRSTBOOT_REBOOT_AFTER == 1 ]] && unit_reboot="ExecStartPost=/usr/bin/systemctl reboot --no-block"
+  cat > "$T/etc/systemd/system/llangvilla-firstboot.service" <<EOF
 [Unit]
-Description=Initial ansible-pull
+Description=First-boot hand-over to the config repo
 After=network-online.target
 Wants=network-online.target
 $unit_before
-ConditionPathExists=!/var/lib/ansible-pull-firstboot.done
+ConditionPathExists=!/var/lib/llangvilla/firstboot.done
 
 [Service]
 Type=oneshot
 Environment=HOME=/root
-ExecStart=/usr/bin/ansible-pull $pull_args $ANSIBLE_PLAYBOOK
-ExecStartPost=/usr/bin/touch /var/lib/ansible-pull-firstboot.done
+ExecStart=/usr/local/lib/llangvilla/firstboot.sh
+ExecStartPost=/usr/bin/mkdir -p /var/lib/llangvilla
+ExecStartPost=/usr/bin/touch /var/lib/llangvilla/firstboot.done
 $unit_reboot
 $unit_extra
 
@@ -508,7 +537,7 @@ fi
 # Services
 UNITS=(NetworkManager.service systemd-timesyncd.service fstrim.timer systemd-boot-update.service)
 [[ $ENABLE_SSH == 1 ]] && UNITS+=(sshd.service)
-[[ -n $ANSIBLE_PULL_URL ]] && UNITS+=(NetworkManager-wait-online.service ansible-pull-firstboot.service)
+[[ -n $CONFIG_REPO_URL ]] && UNITS+=(NetworkManager-wait-online.service llangvilla-firstboot.service)
 for u in sddm.service bluetooth.service; do has_unit "$u" && UNITS+=("$u"); done
 in_target systemctl enable "${UNITS[@]}" || die "Enabling services failed: ${UNITS[*]}"
 

@@ -1,0 +1,33 @@
+# The clean-slate base pacstrap installs on the OptiPlex, on top of what install.sh
+# always adds: base linux-firmware sudo networkmanager zram-generator, the KERNELS
+# from autoinstall.env, CPU microcode, btrfs-progs (btrfs root), openssh
+# (ENABLE_SSH=1), git (CONFIG_REPO_URL set) and EXTRA_PACKAGES.
+#
+# Only what the machine needs to boot to a usable desktop on this hardware belongs
+# here. Apps, themes and anything you will change on the live box go in the config
+# (config/ansible/roles/packages), which applies without the stick.
+#
+# One or more names per line, '#' starts a comment. build-usb.sh and vm/test-vm.sh copy
+# this file onto the stick on every run, so edit it here, not on the stick.
+# Services are enabled when their package is present: sddm, bluetooth.
+
+# --- desktop: KDE Plasma (Wayland) with SDDM
+plasma-meta sddm konsole dolphin
+
+# --- audio: PipeWire
+pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber gst-plugin-pipewire libpulse
+
+# --- graphics: open-source drivers (Intel/AMD; Nvidia boots with nouveau)
+mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-driver
+
+# --- bluetooth
+bluez bluez-utils
+
+# --- btrfs snapshots (harmless on ext4)
+snapper snap-pac
+
+# --- tools
+base-devel git man-db nano reflector
+
+# --- media codecs
+gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg

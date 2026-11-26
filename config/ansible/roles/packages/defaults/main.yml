@@ -1,0 +1,15 @@
+---
+# Apps and tools on top of the base system. The base (desktop, drivers, audio,
+# networking) comes from installer/packages.txt; see config/README.md for which
+# list a package belongs in.
+packages_install:
+  - kate
+  - ark
+  - firefox
+  - vim
+  - htop
+  - btop
+
+# Pulled in by plasma-meta, removed here and kept out by IgnorePkg.
+packages_remove:
+  - plasma-welcome

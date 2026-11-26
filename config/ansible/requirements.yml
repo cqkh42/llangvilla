@@ -1,0 +1,4 @@
+---
+# For linting only: Arch's ansible package already ships these collections.
+collections:
+  - name: community.general

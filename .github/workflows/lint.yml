@@ -1,0 +1,55 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck installer/*.sh config/*.sh vm/*.sh
+
+      - name: Env template parses as bash
+        run: bash -n installer/autoinstall.env.example
+
+      - name: Env template passes install.sh --check once filled in
+        run: |
+          hash=$(openssl passwd -6 ci-test)
+          tmpl=installer/autoinstall.env.example
+          sed -e 's|__WIFI_SSID__|CI|' \
+              -e 's|__WIFI_PASSWORD__|ci-password|' \
+              -e "s|__PASSWORD_HASH__|${hash}|" "$tmpl" > /tmp/ci.env
+          bash installer/install.sh --check /tmp/ci.env
+          # and the raw template must be rejected (placeholders left)
+          ! bash installer/install.sh --check "$tmpl"
+
+  config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install linters
+        run: pip install --user ansible ansible-lint yamllint
+
+      - name: yamllint
+        run: yamllint .
+
+      - name: ansible-lint
+        run: ansible-lint config/ansible
+
+      - name: Playbook syntax
+        working-directory: config/ansible
+        env:
+          ANSIBLE_CONFIG: ansible.cfg
+        run: ansible-playbook --syntax-check site.yml

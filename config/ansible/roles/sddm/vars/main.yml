@@ -1,3 +1,4 @@
+---
 sddm_flavor: mocha
 sddm_accent: mauve
 sddm_catppuccin_version: "v1.1.2"        # check github.com/catppuccin/sddm/releases

@@ -1,15 +1,16 @@
 name: VM install test
 
-# Full end-to-end test: build the ISO, install Arch into a QEMU VM from a test
-# stick, boot the result and run the checks in autoinstall/test-vm.sh.
-# Takes roughly 30-45 minutes. Run it on demand from the Actions tab.
+# Full end-to-end test of the working tree: build the ISO, install Arch into a
+# QEMU VM from a test stick, check the base system, then apply config/ and check
+# again (vm/test-vm.sh all).
+# Takes roughly 40-60 minutes. Run it on demand from the Actions tab.
 # Manual only for now; the weekly schedule comes back once it passes reliably
 # (cqkh42/llangvilla#11).
 on:
   workflow_dispatch:
     inputs:
-      ansible:
-        description: "Also run the first-boot ansible-pull (default branch)"
+      firstboot:
+        description: "Also run the real first-boot hook (clones the default branch from GitHub)"
         type: boolean
         default: false
 
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   vm-install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -46,14 +47,14 @@ jobs:
             mtools dosfstools openssh-client
 
       - name: Build the ISO
-        run: autoinstall/build-usb.sh
+        run: installer/build-usb.sh
 
-      - name: Install and check in a VM
+      - name: Install, check and apply the config in a VM
         env:
-          ANSIBLE_FLAG: ${{ inputs.ansible && '--ansible' || '' }}
+          FIRSTBOOT_FLAG: ${{ inputs.firstboot && '--firstboot' || '' }}
         run: |
           # shellcheck disable=SC2086  # empty or one flag
-          autoinstall/test-vm.sh all --timeout 75 $ANSIBLE_FLAG
+          vm/test-vm.sh all --timeout 75 $FIRSTBOOT_FLAG
 
       - name: Upload installer logs
         if: always()
