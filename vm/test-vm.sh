@@ -379,7 +379,14 @@ fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
 check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-failed}"; fi; }
 s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
 root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
-sshd_no_pw()   { s sshd -T | grep -qx 'passwordauthentication no'; }
+# On failure, show what sshd decided and which files set it.
+sshd_no_pw() {
+  s sshd -T | grep -qx 'passwordauthentication no' && return 0
+  s sshd -T 2>&1 | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|usepam) '
+  s grep -HnEi '^[[:space:]]*(include|passwordauthentication|kbdinteractiveauthentication|usepam|match)' \
+    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
+  return 1
+}
 wifi_profile() { [[ $(s stat -c %a /etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection) == 600 ]]; }
 # Any display manager registers its login screen with logind as a "greeter" session.
 greeter_session() {
@@ -531,7 +538,13 @@ case $cmd in
   config)  do_config ;;
   all)     do_install
            if [[ -n $stick_dev ]]; then info "Skipping check and config (--stick: the test key is not on that install)"
-           else do_check; do_config; fi ;;
+           else
+             # A failed base check still lets the config phase run, so one run reports both.
+             base_ok=1
+             ( do_check ) || base_ok=0
+             do_config
+             (( base_ok )) || die "The base-system checks failed (see above); the config phase ran anyway."
+           fi ;;
   boot)    do_boot ;;
   live)    do_live ;;
   ssh)     do_ssh ;;

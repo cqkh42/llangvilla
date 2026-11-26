@@ -84,6 +84,8 @@ The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO'
 - SSH refuses passwords (checked from the host)
 - with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist
 
+If a base check fails, `all` still runs the config phase and fails at the end, so one run reports both.
+
 It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/screens/` (QEMU's `screendump`, needs `python3`). The VM workflow uploads it with the installer logs.
 
 ### Config (`config`)
