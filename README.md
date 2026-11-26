@@ -61,8 +61,7 @@ vm/test-vm.sh boot       # open the VM in a window
 ├── config/                Config: apply.sh entrypoint and the Ansible playbook
 │   └── ansible/
 ├── vm/                    VM test harness
-├── .github/workflows/     CI: lint (every push) and VM test (manual)
-└── TODO.md
+└── .github/workflows/     CI: lint (every push) and VM test (weekly + manual)
 ```
 
 ## How the parts connect
@@ -87,7 +86,7 @@ Rules that keep the parts independent:
 | Env template | `installer/install.sh --check FILE` | `lint.yml` |
 | YAML | `yamllint .` | `lint.yml` |
 | Ansible | `ansible-lint config/ansible` | `lint.yml` |
-| End to end | `vm/test-vm.sh all` | `vm-test.yml`, manual (Actions tab) |
+| End to end | `vm/test-vm.sh all` | `vm-test.yml`, weekly and manual (Actions tab) |
 
 Install the linters with `pip install shellcheck-py ansible ansible-lint yamllint`.
 

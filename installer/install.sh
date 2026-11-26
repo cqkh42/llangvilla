@@ -116,7 +116,8 @@ check_config() {
   [[ -n ${KERNELS// /} ]] || errs+=("KERNELS must name at least one kernel (e.g. 'linux linux-lts')")
 
   if [[ -n $WIFI_SSID ]]; then
-    (( ${#WIFI_PSK} >= 8 && ${#WIFI_PSK} <= 64 )) || errs+=("WIFI_PSK must be 8-63 characters (or 64 hex digits)")
+    (( ${#WIFI_PSK} >= 8 && ${#WIFI_PSK} <= 63 )) || [[ $WIFI_PSK =~ ^[0-9A-Fa-f]{64}$ ]] \
+      || errs+=("WIFI_PSK must be 8-63 characters (or 64 hex digits)")
   elif [[ -n $WIFI_PSK ]]; then
     errs+=("WIFI_PSK is set but WIFI_SSID is empty")
   fi
@@ -550,7 +551,8 @@ in_target bootctl install || in_target bootctl --no-variables install || die "bo
 
 ROOT_UUID=$(blkid -s UUID -o value "$ROOT")
 [[ -n $ROOT_UUID ]] || die "Could not read the root filesystem's UUID."
-options="root=UUID=$ROOT_UUID rw"
+# zswap off: swap is zram, and zswap in front of it only adds overhead (Arch wiki, zram).
+options="root=UUID=$ROOT_UUID rw zswap.enabled=0"
 [[ $ROOT_FS == btrfs ]] && options+=" rootflags=subvol=@"
 
 # Current mkinitcpio embeds microcode via its 'microcode' hook; older configs need an initrd line.

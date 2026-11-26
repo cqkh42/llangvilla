@@ -32,6 +32,12 @@ Run as root. `apply.sh` does the following:
 2. Unless `--no-upgrade`: upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
 3. Installs `ansible` with pacman if `ansible-playbook` is missing.
 4. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
+5. After an upgrade, even a failed run, says what still runs old code. It never acts on it itself:
+   - **Reboot needed**: the running kernel was upgraded, so its modules are gone (plugging in new hardware can fail until you reboot).
+   - **Log out and in**: a desktop or login session still uses replaced libraries (Qt, KDE, Mesa and so on).
+   - **Services still using replaced libraries**: restart them with `systemctl restart`, or reboot.
+
+Only one run at a time: a second `apply.sh` while one is running exits with `Another apply.sh is already running`.
 
 | Option | Effect |
 |---|---|
@@ -78,6 +84,7 @@ config/
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
         ├── packages/              apps, tools and fonts
+        ├── boot/                  kernel command line of every boot entry (zswap off)
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
@@ -159,7 +166,7 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Not restart or start `plasmalogin`/`display-manager`**, including from handlers. At first boot the login screen waits for this run, so it would deadlock until the 30-minute timeout. Write the config file; the display manager reads it on start. Use `systemctl restart --no-block` if something must be triggered.
 - **Not reboot.** The hook reboots once after a successful run. A reboot mid-run skips the done marker, so the hook would run again.
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
-- **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` warns otherwise.
+- **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` fails otherwise.
 - **Put user-level settings in `config/home`** (home-manager), not in Ansible. For the rare user-level Ansible task, use `become: true` and `become_user: "{{ user_name }}"`.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
@@ -184,4 +191,5 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
+| `Another apply.sh is already running` | Another run (the first-boot hook, or another terminal) holds the lock in `/run/llangvilla-apply.lock`. Wait for it, or check with `pgrep -af apply.sh` |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

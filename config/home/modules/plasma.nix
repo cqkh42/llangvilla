@@ -92,6 +92,10 @@ in
       }
     ];
 
+    # UK keyboard in the session itself, not only from /etc/X11/xorg.conf.d (the
+    # installer's X11_KEYMAP), which a Wayland session may not read.
+    input.keyboard.layouts = [ { layout = "gb"; } ];
+
     # Spotlight-style search on Meta+Space (Meta alone still opens the launcher).
     krunner.shortcuts.launch = "Meta+Space";
 

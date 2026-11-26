@@ -68,7 +68,7 @@ Then boot the target machine from the stick's UEFI entry with Secure Boot off ([
 5. It selects the target disk and asks for confirmation.
 6. It partitions the disk (GPT: 1 GiB ESP + root) and creates the btrfs subvolumes `@`, `@home`, `@log`, `@pkg` and `@.snapshots`.
 7. `pacstrap` installs the packages.
-8. It configures the system: fstab, locale, hostname, user, sudo, Wi-Fi, SSH, zram, the first-boot hook and systemd-boot.
+8. It configures the system: fstab, locale, hostname, user, sudo, Wi-Fi, SSH, zram (with zswap off on the kernel command line), the first-boot hook and systemd-boot.
 9. It copies the logs to the stick and powers off.
 
 Nothing is written to the target disk before step 6. A bad setting, network problem or unknown package stops the install with the disk untouched.
