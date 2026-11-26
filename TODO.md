@@ -9,7 +9,7 @@
 5. move the builder to an arch base
 
 ## Login screen
-1. Theme Plasma Login Manager to match the desktop (config design doc, milestone 3)
+1. Check the themed Plasma Login Manager in the VM (config design doc, milestone 3)
 
 ## Misc
 

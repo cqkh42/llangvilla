@@ -10,3 +10,6 @@ packages_install:
   - vim
   - htop
   - btop
+  # fonts: Inter for the interface, JetBrains Mono (Nerd Font) for terminals
+  - inter-font
+  - ttf-jetbrains-mono-nerd

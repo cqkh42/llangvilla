@@ -1,6 +1,6 @@
 # config
 
-Personalises an installed machine: apps, avatar and system tweaks, and soon the login screen's look. It runs once on first boot through the installer's [first-boot hook](../installer/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
+Personalises an installed machine: apps, fonts, the Colloid theme, the login screen's look, the avatar and system tweaks. It runs once on first boot through the installer's [first-boot hook](../installer/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
 
 It is an Ansible playbook behind a single entrypoint, `apply.sh`. Nix home-manager is planned as a second step behind the same entrypoint.
 
@@ -73,7 +73,9 @@ config/
     ├── requirements.yml           collections, for linting only
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
-        ├── packages/              apps and tools
+        ├── packages/              apps, tools and fonts
+        ├── theme/                 Colloid dark, system-wide, pinned to exact commits
+        ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         └── user_avatar/           user avatar, through AccountsService
 ```
 
@@ -82,7 +84,25 @@ config/
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
 | `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
-| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop | Installed with pacman |
+| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
+| `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | Colloid dark, 24 px, Inter 10 | The login screen's look |
+| `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg` | Installed as the `Seafront` wallpaper package, used by the login screen (and later the desktop) |
+| `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
+
+## Themes
+
+The `theme` role installs Colloid dark into `/usr/share`, so the login screen, which runs as a system user, can use it as well. Choosing it for your own session is the user layer's job (home-manager, later).
+
+| Part | From | Installed as |
+|---|---|---|
+| Plasma style, window decorations, colour scheme, look-and-feel | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark`, `com.github.vinceliuice.Colloid-dark` |
+| Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
+| GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
+
+Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply.
+
+The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
 
 ## What goes in the config
 
@@ -119,5 +139,9 @@ The first run happens before the login screen starts, and every run is as root. 
 | `System upgrade failed` | A pacman problem (mirror, keyring, conflict). Fix it with pacman directly, or apply without upgrading: `--no-upgrade` |
 | `git pull failed` | Local changes or a diverged branch in `/opt/llangvilla`. Inspect with `git -C /opt/llangvilla status`, or apply as is with `--no-pull` |
 | `Check the login user exists` fails | `user_name` doesn't match the installer's `USER_NAME` |
+| `Check Plasma Login Manager is installed` fails | PLM is missing from the base; it comes from `installer/packages.txt` |
+| `Look up the login screen's system user` fails | PLM's system user isn't `plasmalogin`. Find it with `getent passwd \| grep -i login` and set `login_screen_greeter_user` |
+| The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
+| `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

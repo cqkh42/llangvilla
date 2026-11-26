@@ -13,5 +13,9 @@
   roles:
     - role: packages
       tags: [packages]
+    - role: theme
+      tags: [theme]
+    - role: login_screen
+      tags: [login_screen]
     - role: user_avatar
       tags: [user_avatar]
