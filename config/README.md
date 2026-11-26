@@ -81,7 +81,7 @@ config/
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
-        ├── nix/                   Nix from pacman, daemon, flakes, nix-users
+        ├── nix/                   Nix from pacman, daemon socket, flakes
         └── home_manager/          runs home-manager switch as the user (last role)
 ```
 
@@ -181,7 +181,7 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check Plasma Login Manager is installed` fails | PLM is missing from the base; it comes from `installer/packages.txt` |
 | `Look up the login screen's system user` fails | PLM's system user isn't `plasmalogin`. Find it with `getent passwd \| grep -i login` and set `login_screen_greeter_user` |
 | The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
-| `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: the user isn't in `nix-users` yet (re-run `apply.sh`), or `nix-daemon.socket` isn't running |
+| `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

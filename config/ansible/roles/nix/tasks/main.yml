@@ -23,8 +23,18 @@
     enabled: true
     state: started
 
-- name: Let the login user use the Nix daemon
+# Arch's package leaves Nix's default `allowed-users = *`: every local user may use
+# the daemon. Older packaging (and the Arch wiki) restricted it to nix-users; join
+# that group only where it exists.
+- name: Look for the nix-users group
+  ansible.builtin.getent:
+    database: group
+    key: nix-users
+    fail_key: false
+
+- name: Let the login user use the Nix daemon (nix-users, where the group exists)
   ansible.builtin.user:
     name: "{{ user_name }}"
     groups: nix-users
     append: true
+  when: ansible_facts.getent_group['nix-users'] is not none
