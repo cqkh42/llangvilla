@@ -23,6 +23,13 @@
     enabled: true
     state: started
 
+# Arch's package doesn't create the store; the first Nix command as root does.
+# Without this the user's first command fails: opening file "/nix/store".
+- name: Initialise the Nix store
+  ansible.builtin.command:
+    cmd: nix --extra-experimental-features nix-command store info
+    creates: /nix/store
+
 # Arch's package leaves Nix's default `allowed-users = *`: every local user may use
 # the daemon. Older packaging (and the Arch wiki) restricted it to nix-users; join
 # that group only where it exists.

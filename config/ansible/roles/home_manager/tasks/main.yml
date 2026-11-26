@@ -18,6 +18,7 @@
   environment:
     FLAKE: "{{ home_manager_flake_dir }}"
     HM_USER: "{{ user_name }}"
+    NIX_REMOTE: daemon   # the store belongs to root; go through the daemon
   become: true
   become_user: "{{ user_name }}"
   register: home_manager_switch
