@@ -12,10 +12,20 @@
       url = "git+https://github.com/nix-community/home-manager?ref=master&shallow=1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    plasma-manager = {
+      url = "git+https://github.com/nix-community/plasma-manager?ref=trunk&shallow=1";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
   };
 
   outputs =
-    { nixpkgs, home-manager, ... }:
+    {
+      nixpkgs,
+      home-manager,
+      plasma-manager,
+      ...
+    }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -24,7 +34,10 @@
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = { inherit username; };
-          modules = [ ./home.nix ];
+          modules = [
+            plasma-manager.homeModules.plasma-manager
+            ./home.nix
+          ];
         };
     in
     {

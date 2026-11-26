@@ -2,6 +2,9 @@
 { username, ... }:
 {
   imports = [
+    ./modules/plasma.nix
+    ./modules/gtk.nix
+    ./modules/apps.nix
     ./modules/git.nix
     ./modules/shell.nix
   ];

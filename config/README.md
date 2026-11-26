@@ -67,9 +67,9 @@ config/
 ├── apply.sh                       entrypoint
 ├── assets/                        wallpaper source (SVG) and a 3840×2160 render
 ├── home/                          the user layer: a Nix flake for home-manager
-│   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager), pinned by the lock
+│   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
-│   └── modules/                   one file per concern: git.nix, shell.nix, ...
+│   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
@@ -105,11 +105,20 @@ config/
 nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#jack
 ```
 
-- **Pinned.** `flake.lock` fixes nixpkgs and home-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
+- **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
 - **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
 - **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
 - **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, inside first boot's 30-minute window. Later runs take seconds.
 - **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
+- **Plasma in two steps.** [plasma-manager](https://github.com/nix-community/plasma-manager) writes the settings files during the switch (fonts, window buttons, menu bars). The colour scheme, icons, cursor, wallpaper and panels need a running Plasma, so its autostart entry applies them at the next login. With `overrideConfig = true` the repo always wins: changes made in System Settings are reset on the next apply.
+- **No dconf.** home-manager's dconf writes need a D-Bus session during the switch, which first boot doesn't have; on Plasma, GTK 4 apps get the dark preference from KDE's portal instead.
+
+| Module | Sets |
+|---|---|
+| `plasma.nix` | Colloid dark (style, colours, icons, cursor, decorations), Breeze widgets, buttons on the left, Inter / JetBrains Mono, top bar (launcher, tray, clock), floating dock that moves out of the way, KRunner on Meta+Space, wallpaper on desktop and lock screen |
+| `gtk.nix` | GTK 3/4 theme, icons, cursor and font to match |
+| `apps.nix` | Menu bars off in Dolphin, Kate, Ark and Konsole (☰ menus; Ctrl+M brings one back) |
+| `git.nix`, `shell.nix` | Git behaviour (no identity yet) and bash |
 
 What goes where:
 

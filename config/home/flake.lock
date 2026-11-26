@@ -39,10 +39,36 @@
         "url": "https://github.com/NixOS/nixpkgs"
       }
     },
+    "plasma-manager": {
+      "inputs": {
+        "home-manager": [
+          "home-manager"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1785762349,
+        "narHash": "sha256-jZhZkzAwc7f3exzcTDJWP2WCAchCv0iNC3UF/QsahdQ=",
+        "ref": "trunk",
+        "rev": "a19a2a029fa180911bd89c554dca1616e10f4c1d",
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-community/plasma-manager"
+      },
+      "original": {
+        "ref": "trunk",
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-community/plasma-manager"
+      }
+    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "plasma-manager": "plasma-manager"
       }
     }
   },
