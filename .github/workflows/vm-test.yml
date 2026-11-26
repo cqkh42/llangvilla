@@ -3,7 +3,7 @@ name: VM install test
 # Full end-to-end test of the working tree: build the ISO, install Arch into a
 # QEMU VM from a test stick, check the base system, then apply config/ and check
 # again (vm/test-vm.sh all).
-# Takes roughly 40-60 minutes. Run it on demand from the Actions tab.
+# Takes about 20 minutes. Run it on demand from the Actions tab.
 # Manual only for now; the weekly schedule comes back once it passes reliably
 # (cqkh42/llangvilla#11).
 on:
