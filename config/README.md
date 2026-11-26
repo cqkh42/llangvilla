@@ -39,6 +39,8 @@ Run as root. `apply.sh` does the following:
 
 Only one run at a time: a second `apply.sh` while one is running exits with `Another apply.sh is already running`.
 
+Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the newest 20 are kept). A pacman lock left by a run that was cut off (a power cut, say) is removed when no pacman is running, so the next run can start.
+
 | Option | Effect |
 |---|---|
 | `--no-pull` | Apply the files as they are. Used by the VM test and for local edits |
@@ -115,7 +117,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
 - **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
 - **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
-- **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, inside first boot's 30-minute window. Later runs take seconds.
+- **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, which first boot waits for (it has no time limit). Later runs take seconds.
 - **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
 - **Plasma in two steps.** [plasma-manager](https://github.com/nix-community/plasma-manager) writes the settings files during the switch (fonts, window buttons, menu bars). The colour scheme, icons, cursor, wallpaper and panels need a running Plasma, so its autostart entry applies them at the next login. With `overrideConfig = true` the repo always wins: changes made in System Settings are reset on the next apply.
 - **No dconf.** home-manager's dconf writes need a D-Bus session during the switch, which first boot doesn't have; on Plasma, GTK 4 apps get the dark preference from KDE's portal instead.
@@ -163,7 +165,7 @@ The config may rely on the base: a role that themes the login screen checks that
 
 The first run happens before the login screen starts, and every run is as root. Tasks must:
 
-- **Not restart or start `plasmalogin`/`display-manager`**, including from handlers. At first boot the login screen waits for this run, so it would deadlock until the 30-minute timeout. Write the config file; the display manager reads it on start. Use `systemctl restart --no-block` if something must be triggered.
+- **Not restart or start `plasmalogin`/`display-manager`**, including from handlers. At first boot the login screen waits for this run, so first boot would hang for good (it has no time limit). Write the config file; the display manager reads it on start. Use `systemctl restart --no-block` if something must be triggered.
 - **Not reboot.** The hook reboots once after a successful run. A reboot mid-run skips the done marker, so the hook would run again.
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
 - **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` fails otherwise.
@@ -190,6 +192,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
 | `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
-| First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
+| `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |
 | `Another apply.sh is already running` | Another run (the first-boot hook, or another terminal) holds the lock in `/run/llangvilla-apply.lock`. Wait for it, or check with `pgrep -af apply.sh` |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

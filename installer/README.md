@@ -272,15 +272,15 @@ Only add packages the machine needs to boot to a usable desktop on this hardware
 This is the only interface between the installer and the config. When `CONFIG_REPO_URL` is set, the installer:
 
 - adds `git`;
-- writes `/usr/local/lib/llangvilla/firstboot.sh`, which clones the repository to `/opt/llangvilla` (if not already cloned) and runs `CONFIG_ENTRYPOINT`;
+- writes `/usr/local/lib/llangvilla/firstboot.sh`, which clones the repository to `/opt/llangvilla` (if not already cloned, retrying for about 5 minutes while the network comes up) and runs `CONFIG_ENTRYPOINT`. If either fails, it leaves a notice on the text console (`/etc/issue.d/`) and in the login message (`/etc/motd.d/`, shown over SSH) until a later run succeeds;
 - writes and enables `llangvilla-firstboot.service`, plus `NetworkManager-wait-online.service` so that `network-online.target` waits for the network.
 
 | | `FIRSTBOOT_BEFORE_LOGIN=1` (default) | `FIRSTBOOT_BEFORE_LOGIN=0` |
 |---|---|---|
 | Ordering | `Before=display-manager.service plasmalogin.service` | Runs alongside the login screen |
 | Console | Output shown on the console | Journal only |
-| On failure | The login screen starts anyway; retried on the next boot | Retried every 60 s |
-| Timeout | 30 min, then the login screen starts | None |
+| On failure | The login screen starts anyway, with a notice on the console and in SSH logins; retried on the next boot | Retried every 60 s |
+| Time limit | None: stopping a run mid-upgrade could break the system. SSH and the text consoles (`Ctrl+Alt+F2`) work meanwhile | None |
 
 The unit only runs while `/var/lib/llangvilla/firstboot.done` is absent, and that marker is written only on success. With `FIRSTBOOT_REBOOT_AFTER=1` the machine reboots once after success. The marker is written first, so the reboot cannot loop. Don't combine it with `FIRSTBOOT_BEFORE_LOGIN=0`: it could reboot during a session.
 
@@ -381,7 +381,8 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 | Wi-Fi not connected | `nmcli device wifi connect SSID password PASS`. Profile: `/etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection` |
 | SSH refused | Key-only by default. Check `~/.ssh/authorized_keys`; the install log shows how many keys were installed |
 | First-boot hook fails | `journalctl -u llangvilla-firstboot.service -b`. Clone errors are the hook's (network, URL, branch); later errors are the [config's](../config/README.md#troubleshooting) |
-| First boot is slow | Expected with `FIRSTBOOT_BEFORE_LOGIN=1`: the config runs before the login screen (up to 30 min). Don't power off |
+| First boot is slow | Expected with `FIRSTBOOT_BEFORE_LOGIN=1`: the config runs before the login screen, with no time limit. Don't power off. Watch it on the console, over SSH or on `Ctrl+Alt+F2` (`journalctl -fu llangvilla-firstboot.service`) |
+| `First-boot configuration FAILED` on the console or at SSH login | See `/var/log/llangvilla/` and `journalctl -u llangvilla-firstboot.service -b`. Fix, then reboot to retry; the notice goes away after a successful run |
 
 ## Security
 

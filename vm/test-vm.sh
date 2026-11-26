@@ -436,6 +436,7 @@ if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
 if [[ -n $EXP_FIRSTBOOT ]]; then
   check "first-boot hook done marker" test -e /var/lib/llangvilla/firstboot.done
   check "repo checkout in /opt/llangvilla" test -d /opt/llangvilla/.git
+  check "no first-boot failure notice" test ! -e /etc/issue.d/llangvilla-firstboot.issue
 fi
 exit $fails
 CHECKS
@@ -477,6 +478,9 @@ do_config() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
     || die "home-manager produced no generation for $vm_user."
   ok "home-manager applied the user layer"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" 'ls /var/log/llangvilla/apply-*.log' >/dev/null 2>&1 \
+    || die "apply.sh wrote no log to /var/log/llangvilla/."
+  ok "apply.sh logged to /var/log/llangvilla/"
 
   step "Applying it again: nothing should change"
   out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }

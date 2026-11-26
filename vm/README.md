@@ -82,7 +82,7 @@ The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO'
 - root is locked
 - the Wi-Fi profile has mode 600
 - SSH refuses passwords (checked from the host)
-- with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist
+- with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist, and there is no failure notice
 
 If a base check fails, `all` still runs the config phase and fails at the end, so one run reports both.
 
@@ -91,7 +91,7 @@ It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/s
 ### Config (`config`)
 
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
-2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails.
+2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, or if no log appears in `/var/log/llangvilla/`.
 3. Runs it again and fails if any task reports a change.
 4. Reboots and checks that systemd reports `running`, the display manager is active and `zswap.enabled=0` is on the kernel command line, then saves a screenshot of the login screen.
 

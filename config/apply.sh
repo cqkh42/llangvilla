@@ -45,6 +45,17 @@ if [[ ${LLANGVILLA_APPLY_LOCKED:-} != 1 ]]; then
   exec 9>/run/llangvilla-apply.lock
   flock -n 9 || die "Another apply.sh is already running."
   export LLANGVILLA_APPLY_LOCKED=1
+
+  # Everything from here on also goes to a log file (the re-run inherits it). Keeps
+  # the newest 20.
+  log_dir=/var/log/llangvilla
+  mkdir -p "$log_dir"
+  log="$log_dir/apply-$(date +%Y%m%d-%H%M%S).log"
+  : > "$log"   # exists before the cleanup below counts the files
+  exec > >(exec 9>&-; tee -a "$log") 2>&1   # tee must not hold the lock
+  say "Logging to $log"
+  # shellcheck disable=SC2012  # our own fixed-pattern filenames
+  ls -1t "$log_dir"/apply-*.log | tail -n +21 | xargs -r rm -f
 fi
 
 # After an upgrade, say what still runs old code. Never reboots or restarts anything
@@ -92,6 +103,13 @@ fi
 
 # 2. Bring the system up to date, so the playbook installs against a current package
 # database. Then the tools the config needs: the installer only guarantees git and a base.
+# A run killed mid-transaction (power cut) leaves pacman's lock behind, and every
+# later run would fail on it. Safe to remove when no pacman is running; this run
+# holds the apply lock, so no other apply.sh is about to start one.
+if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
+  say "Removing a stale pacman lock (no pacman is running)."
+  rm -f /var/lib/pacman/db.lck
+fi
 if (( upgrade )); then
   trap report_restarts EXIT   # also after a failed playbook: the upgrade happened
   say "Upgrading the system (pacman -Syu)..."
