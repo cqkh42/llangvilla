@@ -1,0 +1,11 @@
+{
+  "colorScheme": "ColloidDark",
+  "plasmaTheme": "Colloid-dark",
+  "windowDecoration": "__aurorae__svg__Colloid-dark",
+  "iconTheme": "Colloid-Dark",
+  "gtkTheme": "Colloid-Dark",
+  "cursor": { "theme": "Colloid-dark-cursors", "size": 24 },
+  "font": { "family": "Inter", "size": 10, "smallSize": 8 },
+  "monoFont": { "family": "JetBrainsMono Nerd Font", "size": 10 },
+  "wallpaper": { "name": "Seafront", "size": "3840x2160" }
+}

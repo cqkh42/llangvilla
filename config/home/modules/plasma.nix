@@ -1,9 +1,12 @@
 # The desktop: Colloid dark laid out like macOS (config design doc, "The look").
 # The theme files are installed system-wide by Ansible's theme role; this module
-# only selects them. overrideConfig: the repo always wins, and changes made in
+# only selects them, by the names in ../theme.json (shared with Ansible's
+# login_screen role). overrideConfig: the repo always wins, and changes made in
 # System Settings are reset on the next apply (log out and in after applying).
 let
-  wallpaper = "/usr/share/wallpapers/Seafront/contents/images/3840x2160.jpg";
+  theme = builtins.fromJSON (builtins.readFile ../theme.json);
+  # Installed by Ansible's login_screen role as a Plasma wallpaper package.
+  wallpaper = "/usr/share/wallpapers/${theme.wallpaper.name}/contents/images/${theme.wallpaper.size}.jpg";
 in
 {
   programs.plasma = {
@@ -11,19 +14,15 @@ in
     overrideConfig = true;
 
     workspace = {
-      theme = "Colloid-dark";
-      colorScheme = "ColloidDark";
-      iconTheme = "Colloid-Dark";
-      cursor = {
-        theme = "Colloid-dark-cursors";
-        size = 24;
-      };
+      theme = theme.plasmaTheme;
+      inherit (theme) colorScheme iconTheme;
+      cursor = { inherit (theme.cursor) theme size; };
       # Breeze widgets coloured by the Colloid scheme; Colloid's look-and-feel
       # package would switch widgets to Kvantum, which is not used.
       widgetStyle = "Breeze";
       windowDecorations = {
         library = "org.kde.kwin.aurorae";
-        theme = "__aurorae__svg__Colloid-dark";
+        theme = theme.windowDecoration;
       };
       inherit wallpaper;
     };
@@ -40,20 +39,20 @@ in
 
     fonts =
       let
-        inter = size: {
-          family = "Inter";
+        ui = size: {
+          inherit (theme.font) family;
           pointSize = size;
         };
       in
       {
-        general = inter 10;
-        menu = inter 10;
-        toolbar = inter 10;
-        windowTitle = inter 10;
-        small = inter 8;
+        general = ui theme.font.size;
+        menu = ui theme.font.size;
+        toolbar = ui theme.font.size;
+        windowTitle = ui theme.font.size;
+        small = ui theme.font.smallSize;
         fixedWidth = {
-          family = "JetBrainsMono Nerd Font";
-          pointSize = 10;
+          inherit (theme.monoFont) family;
+          pointSize = theme.monoFont.size;
         };
       };
 
