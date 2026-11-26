@@ -223,7 +223,8 @@ wait_ssh() {
 
 # Run a command on the VM as root (the test password goes to sudo on stdin).
 # Save a PNG of the VM's screen under $state/logs/screens/ (the VM workflow uploads
-# logs/). Uses QEMU's monitor; a failure only warns.
+# logs/). Uses QEMU's monitor; a failure only warns. A Shift press first wakes the
+# login screen, which fades to just the clock after a while without input.
 vm_screenshot() {
   local out="$state/logs/screens/$1.png"
   mkdir -p "${out%/*}"
@@ -234,6 +235,8 @@ s = socket.socket(socket.AF_UNIX)
 s.connect(sys.argv[1])
 time.sleep(0.5)
 s.recv(65536)
+s.sendall(b"sendkey shift\n")
+time.sleep(2)
 s.sendall(f"screendump {sys.argv[2]} -f png\n".encode())
 time.sleep(3)
 s.close()
