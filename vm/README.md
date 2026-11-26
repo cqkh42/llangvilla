@@ -5,15 +5,15 @@ Runs the installer and the config from the working tree in a QEMU VM with UEFI f
 ## Quick start
 
 ```bash
-eval "$(autoinstall/build-usb.sh)"     # build the ISO once
+eval "$(installer/build-usb.sh)"       # build the ISO once
 vm/test-vm.sh                          # install, check the base, apply the config
 vm/test-vm.sh boot                     # open the result in a window (user jack, password test)
 ```
 
 ## Requirements
 
-- QEMU, OVMF (UEFI firmware), mtools, dosfstools, OpenSSH and OpenSSL. Package names are in [autoinstall: Requirements](../autoinstall/README.md#requirements).
-- An ISO from `autoinstall/build-usb.sh`. The newest one in the cache is used by default.
+- QEMU, OVMF (UEFI firmware), mtools, dosfstools, OpenSSH and OpenSSL. Package names are in [installer: Requirements](../installer/README.md#requirements).
+- An ISO from `installer/build-usb.sh`. The newest one in the cache is used by default.
 - Write access to `/dev/kvm`: run `sudo usermod -aG kvm "$USER"`, then log in again. Without it QEMU falls back to software emulation, and an install takes hours.
 
 ## Usage
@@ -40,7 +40,7 @@ vm/test-vm.sh [COMMAND] [OPTIONS]
 | Option | Default | Description |
 |---|---|---|
 | `--iso FILE` | `$ISO`, else newest cached | ISO to boot |
-| `--env FILE` | `autoinstall/autoinstall.env.example` | Base env for the test stick; placeholders are filled and test overrides appended |
+| `--env FILE` | `installer/autoinstall.env.example` | Base env for the test stick; placeholders are filled and test overrides appended |
 | `--firstboot` | off | Keep `CONFIG_REPO_URL`, so the installed system runs the real first-boot hook (clones from GitHub, not the working tree). `check` waits for it |
 | `--baked` | off | Use the `install.sh` baked into the ISO instead of the working tree's |
 | `--stick DEV` | — | Install from a real USB stick with its own env (needs sudo). `check` and `config` can't log in afterwards; use `boot` |
@@ -95,7 +95,7 @@ The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO'
 
 | Change | Run |
 |---|---|
-| `install.sh` or `autoinstall/packages.txt` | `vm/test-vm.sh` |
+| `install.sh` or `installer/packages.txt` | `vm/test-vm.sh` |
 | `config/` | `vm/test-vm.sh config` on an existing install, then `vm/test-vm.sh boot`. Run the full `vm/test-vm.sh` before merging |
 | The first-boot hook | `vm/test-vm.sh --firstboot` (needs the change pushed, since the hook clones from GitHub) |
 | A real stick, before using it | `vm/test-vm.sh install --stick /dev/sdX` with `TARGET_DISK=auto` on the stick, then `vm/test-vm.sh boot` |
@@ -122,7 +122,7 @@ All under `~/.cache/llangvilla/vm/`:
 |---|---|
 | `The installer left no status` | It stopped before finding the test stick, or is waiting at a prompt. Re-run with `--gui` |
 | Very slow, `/dev/kvm is not usable` warning | Join the `kvm` group (see [Requirements](#requirements)) |
-| `No ISO found` | Build one with `autoinstall/build-usb.sh`, or pass `--iso` |
+| `No ISO found` | Build one with `installer/build-usb.sh`, or pass `--iso` |
 | `config/apply.sh failed` | The playbook output is shown above. Inspect with `vm/test-vm.sh boot` and `vm/test-vm.sh ssh` |
 | `The second run changed things` | A task isn't idempotent; the changed tasks are listed ([writing tasks](../config/README.md#writing-tasks)) |
 | `--ansible was replaced` | Use `--firstboot` for the hook from GitHub, or `config` for the working tree |

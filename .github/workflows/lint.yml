@@ -17,21 +17,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ShellCheck
-        run: shellcheck autoinstall/*.sh config/*.sh vm/*.sh
+        run: shellcheck installer/*.sh config/*.sh vm/*.sh
 
       - name: Env template parses as bash
-        run: bash -n autoinstall/autoinstall.env.example
+        run: bash -n installer/autoinstall.env.example
 
       - name: Env template passes install.sh --check once filled in
         run: |
           hash=$(openssl passwd -6 ci-test)
-          tmpl=autoinstall/autoinstall.env.example
+          tmpl=installer/autoinstall.env.example
           sed -e 's|__WIFI_SSID__|CI|' \
               -e 's|__WIFI_PASSWORD__|ci-password|' \
               -e "s|__PASSWORD_HASH__|${hash}|" "$tmpl" > /tmp/ci.env
-          bash autoinstall/install.sh --check /tmp/ci.env
+          bash installer/install.sh --check /tmp/ci.env
           # and the raw template must be rejected (placeholders left)
-          ! bash autoinstall/install.sh --check "$tmpl"
+          ! bash installer/install.sh --check "$tmpl"
 
   config:
     runs-on: ubuntu-latest

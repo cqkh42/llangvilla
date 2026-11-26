@@ -1,6 +1,6 @@
 ---
 # Apps and tools on top of the base system. The base (desktop, drivers, audio,
-# networking) comes from autoinstall/packages.txt; see config/README.md for which
+# networking) comes from installer/packages.txt; see config/README.md for which
 # list a package belongs in.
 packages_install:
   - kate

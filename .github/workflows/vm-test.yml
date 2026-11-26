@@ -47,7 +47,7 @@ jobs:
             mtools dosfstools openssh-client
 
       - name: Build the ISO
-        run: autoinstall/build-usb.sh
+        run: installer/build-usb.sh
 
       - name: Install, check and apply the config in a VM
         env:

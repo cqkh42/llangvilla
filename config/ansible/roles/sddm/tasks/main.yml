@@ -1,7 +1,7 @@
 ---
 # Themes and configures SDDM. SDDM itself is installed and enabled by the
-# installer (autoinstall/packages.txt), so a box without it is a broken base.
-- name: Check SDDM is installed (it comes from autoinstall/packages.txt)
+# installer (installer/packages.txt), so a box without it is a broken base.
+- name: Check SDDM is installed (it comes from installer/packages.txt)
   ansible.builtin.stat:
     path: /usr/share/sddm/themes
   register: sddm_themes_dir

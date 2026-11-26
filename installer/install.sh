@@ -486,7 +486,7 @@ if [[ -n $CONFIG_REPO_URL ]]; then
   install -d "$T/usr/local/lib/llangvilla"
   {
     echo '#!/bin/bash'
-    echo '# Written by autoinstall/install.sh. Run once by llangvilla-firstboot.service.'
+    echo '# Written by installer/install.sh. Run once by llangvilla-firstboot.service.'
     echo 'set -euo pipefail'
     printf 'url=%q branch=%q entry=%q dir=/opt/llangvilla\n' \
       "$CONFIG_REPO_URL" "$CONFIG_REPO_BRANCH" "$CONFIG_ENTRYPOINT"

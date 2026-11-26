@@ -8,13 +8,13 @@ The repository has three independent parts:
 
 | Part | Directory | Purpose | Runs |
 |---|---|---|---|
-| Installer | [`autoinstall/`](autoinstall/README.md) | Ventoy USB stick that wipes the machine and installs a clean base system | On a reinstall |
+| Installer | [`installer/`](installer/README.md) | Ventoy USB stick that wipes the machine and installs a clean base system | On a reinstall |
 | Config | [`config/`](config/README.md) | Personalises the installed system: apps, theming, settings (Ansible; Nix home-manager planned) | On first boot, then whenever the config changes |
 | VM | [`vm/`](vm/README.md) | Runs the installer and the config from the working tree in a QEMU VM | Before changes reach the real machine |
 
 ```mermaid
 flowchart LR
-    subgraph installer["autoinstall/"]
+    subgraph installer["installer/"]
         A[build-usb.sh] --> B[USB stick] --> C[install.sh] --> D[base system]
     end
     subgraph config["config/"]
@@ -33,9 +33,9 @@ flowchart LR
 Reinstall the machine from scratch:
 
 ```bash
-eval "$(autoinstall/build-usb.sh /dev/sdX)"                 # build the stick
+eval "$(installer/build-usb.sh /dev/sdX)"                   # build the stick
 nano "$V/arch-autoinstall/autoinstall.env"                  # fill in Wi-Fi and password hash
-autoinstall/install.sh --check "$V/arch-autoinstall/autoinstall.env"
+installer/install.sh --check "$V/arch-autoinstall/autoinstall.env"
 # boot the machine from the stick; it installs and powers off
 ```
 
@@ -57,7 +57,7 @@ vm/test-vm.sh boot       # open the VM in a window
 
 ```
 .
-├── autoinstall/           Installer: ISO build, USB stick, install.sh, base package list
+├── installer/             Installer: ISO build, USB stick, install.sh, base package list
 ├── config/                Config: apply.sh entrypoint and the Ansible playbook
 │   └── ansible/
 ├── vm/                    VM test harness
@@ -76,19 +76,19 @@ The installer and the config share one interface, the **first-boot hook**:
 Rules that keep the parts independent:
 
 - The installer knows the repository URL and the entrypoint path, nothing about Ansible.
-- The config relies on the base system from `autoinstall/packages.txt`, not on installer settings. Values such as the user name live in the config's own variables.
+- The config relies on the base system from `installer/packages.txt`, not on installer settings. Values such as the user name live in the config's own variables.
 - A package goes in the base only if the machine needs it to boot to a usable desktop. Everything else goes in the config. See [`config/README.md`](config/README.md#what-goes-in-the-config).
 
 ## Development
 
 | Check | Command | CI |
 |---|---|---|
-| Shell scripts | `shellcheck autoinstall/*.sh config/*.sh vm/*.sh` | `lint.yml`, every push |
-| Env template | `autoinstall/install.sh --check FILE` | `lint.yml` |
+| Shell scripts | `shellcheck installer/*.sh config/*.sh vm/*.sh` | `lint.yml`, every push |
+| Env template | `installer/install.sh --check FILE` | `lint.yml` |
 | YAML | `yamllint .` | `lint.yml` |
 | Ansible | `ansible-lint config/ansible` | `lint.yml` |
 | End to end | `vm/test-vm.sh all` | `vm-test.yml`, manual (Actions tab) |
 
 Install the linters with `pip install shellcheck-py ansible ansible-lint yamllint`.
 
-Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. They live only on the USB stick (see [Security](autoinstall/README.md#security)).
+Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. They live only on the USB stick (see [Security](installer/README.md#security)).

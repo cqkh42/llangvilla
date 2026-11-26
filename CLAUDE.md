@@ -6,7 +6,7 @@ Home-network config, currently focused on one machine: the Dell OptiPlex (invent
 
 Three separate parts, kept apart on purpose (root `README.md` has the flow):
 
-- `autoinstall/` – **part 1, clean slate.** Zero-touch Arch installer. `README.md` is the full guide.
+- `installer/` – **part 1, clean slate.** Zero-touch Arch installer. `README.md` is the full guide.
   - `build-usb.sh` – host-side: builds the ISO in an `archlinux` Docker container, downloads Ventoy (pinned SHA-256), installs and populates the stick. Uses the sibling scripts when run from a checkout, GitHub `main` otherwise.
   - `build.sh` – runs inside the container, builds the ISO with archiso and bakes in `install.sh`.
   - `install.sh` – runs on the live ISO: validates config, partitions, `pacstrap`s and configures the system (user, Wi-Fi, SSH keys, systemd-boot, first-boot hook), powers off. `install.sh --check FILE` validates an env file anywhere (safe).
@@ -24,7 +24,7 @@ The only link between parts 1 and 2 is the first-boot hook: the installer clones
 
 ## Working here
 
-- Lint before pushing: `shellcheck autoinstall/*.sh config/*.sh vm/*.sh`, `yamllint .` and `ansible-lint config/ansible` (CI runs all three). None are preinstalled in the cloud container (`pip install shellcheck-py ansible ansible-lint yamllint`; the full `ansible` package provides `community.general`, since Galaxy may be unreachable).
+- Lint before pushing: `shellcheck installer/*.sh config/*.sh vm/*.sh`, `yamllint .` and `ansible-lint config/ansible` (CI runs all three). None are preinstalled in the cloud container (`pip install shellcheck-py ansible ansible-lint yamllint`; the full `ansible` package provides `community.general`, since Galaxy may be unreachable).
 - Don't run the playbook or `config/apply.sh` (`--syntax-check` is fine), `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `vm/test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks; use the VM workflow.
 - Test installer or base package changes with `vm/test-vm.sh`, config changes with `vm/test-vm.sh config` (`vm/README.md`).
 - Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. Keep the placeholders.

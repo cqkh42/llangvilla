@@ -1,4 +1,4 @@
-# autoinstall
+# installer
 
 Zero-touch Arch Linux installer on a Ventoy USB stick. Boot the stick and the machine installs itself and powers off, about 15–25 minutes later. The result is a clean base system: user, Wi-Fi, key-only SSH, KDE Plasma, btrfs (or ext4) and systemd-boot. Its first boot hands over to the [config](../config/README.md).
 
@@ -26,9 +26,9 @@ Zero-touch Arch Linux installer on a Ventoy USB stick. Boot the stick and the ma
 ```bash
 git clone https://github.com/cqkh42/llangvilla.git && cd llangvilla
 lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'     # find the stick
-eval "$(autoinstall/build-usb.sh /dev/sdX)"                    # build ISO + stick, sets $V
+eval "$(installer/build-usb.sh /dev/sdX)"                      # build ISO + stick, sets $V
 nano "$V/arch-autoinstall/autoinstall.env"                     # fill in the placeholders
-autoinstall/install.sh --check "$V/arch-autoinstall/autoinstall.env"
+installer/install.sh --check "$V/arch-autoinstall/autoinstall.env"
 sync && udisksctl unmount -b "$(findmnt -no SOURCE "$V")"
 ```
 
@@ -100,7 +100,7 @@ Docker is used even on Arch so that every build gets a clean, current Arch with 
 ### 1. Build the ISO
 
 ```bash
-eval "$(autoinstall/build-usb.sh)"
+eval "$(installer/build-usb.sh)"
 ```
 
 With no disk argument, `build-usb.sh` only builds the ISO and downloads Ventoy. The build runs in a privileged `archlinux:latest` container and takes 5–15 minutes. The ISO is cached in `~/.cache/llangvilla/iso-build/out/` and reused until `build.sh` or `install.sh` changes.
@@ -112,7 +112,7 @@ The ISO is only a live system plus `install.sh`. Packages come from the mirrors 
 Run `lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'` with the stick unplugged and then plugged in; the new line is the stick. Check the size and model: the wrong disk will be erased.
 
 ```bash
-eval "$(autoinstall/build-usb.sh /dev/sdX)"
+eval "$(installer/build-usb.sh /dev/sdX)"
 ```
 
 `build-usb.sh` then:
@@ -136,7 +136,7 @@ Re-running it on a prepared stick is safe and refreshes only the ISO and `packag
 It prints shell assignments on stdout for `eval`: `ISO`, `VENTOY_DIR` and, with a disk, `V`. It can also run straight from GitHub, using the files from `main`:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/autoinstall/build-usb.sh)" _ /dev/sdX
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cqkh42/llangvilla/refs/heads/main/installer/build-usb.sh)" _ /dev/sdX
 ```
 
 ### 3. Configure
@@ -145,7 +145,7 @@ Edit the settings on the stick and validate them:
 
 ```bash
 nano "$V/arch-autoinstall/autoinstall.env"
-autoinstall/install.sh --check "$V/arch-autoinstall/autoinstall.env"
+installer/install.sh --check "$V/arch-autoinstall/autoinstall.env"
 ```
 
 You must set `WIFI_SSID`, `WIFI_PSK` (or `''` for both on a cabled machine) and `PASSWORD_HASH` (from `openssl passwd -6`). The [configuration reference](#configuration-reference) lists every setting. `--check` reports every problem at once; the installer runs the same check before touching anything.

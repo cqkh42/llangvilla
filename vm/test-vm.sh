@@ -23,7 +23,7 @@
 #
 # Options:
 #   --iso FILE       ISO to boot (default: $ISO, else the newest build in the cache)
-#   --env FILE       base autoinstall.env (default: autoinstall/autoinstall.env.example).
+#   --env FILE       base autoinstall.env (default: installer/autoinstall.env.example).
 #                    Any placeholders are filled with test values, then test overrides
 #                    are appended (blank disk, no countdown, test password and SSH key).
 #   --firstboot      keep CONFIG_REPO_URL, so the installed system runs the real
@@ -45,7 +45,7 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ai="$repo/autoinstall"
+ai="$repo/installer"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/llangvilla"
 state="$cache/vm"
 disk="$state/disk.qcow2"
@@ -128,7 +128,7 @@ find_iso() {
     # shellcheck disable=SC2012  # our own fixed-pattern filenames
     iso=$(ls -1t "$cache"/iso-build/out/arch-autoinstall-*.iso 2>/dev/null | head -n1 || true)
   fi
-  [[ -n $iso && -f $iso ]] || die "No ISO found. Build one first: autoinstall/build-usb.sh (or pass --iso)."
+  [[ -n $iso && -f $iso ]] || die "No ISO found. Build one first: installer/build-usb.sh (or pass --iso)."
   info "ISO: $iso"
 }
 
@@ -295,7 +295,7 @@ do_install() {
     [[ -b $stick_dev ]] || die "$stick_dev is not a block device"
     [[ $(lsblk -dnro TRAN "$stick_dev") == usb ]] || die "$stick_dev is not a USB disk, refusing"
     if lsblk -nro MOUNTPOINT "$stick_dev" | grep -q .; then
-      die "$stick_dev is mounted. Unmount it first (autoinstall/README.md, Eject)"
+      die "$stick_dev is mounted. Unmount it first (installer/README.md, Eject)"
     fi
     step "Installing from the real stick $stick_dev (Ventoy menu, then the installer)"
     warn "This uses the stick's own autoinstall.env: its countdown applies, and a pinned"

@@ -1,6 +1,6 @@
 # config
 
-Personalises an installed machine: apps, login screen theme, avatar and system tweaks. It runs once on first boot through the installer's [first-boot hook](../autoinstall/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
+Personalises an installed machine: apps, login screen theme, avatar and system tweaks. It runs once on first boot through the installer's [first-boot hook](../installer/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
 
 It is an Ansible playbook behind a single entrypoint, `apply.sh`. Nix home-manager is planned as a second step behind the same entrypoint.
 
@@ -89,7 +89,7 @@ config/
 
 | Goes in | Examples | Why |
 |---|---|---|
-| Base (`autoinstall/packages.txt`) | Plasma, SDDM, drivers, audio, Bluetooth, NetworkManager, snapper | Needed to boot to a usable desktop; changes only on reinstall |
+| Base (`installer/packages.txt`) | Plasma, SDDM, drivers, audio, Bluetooth, NetworkManager, snapper | Needed to boot to a usable desktop; changes only on reinstall |
 | Config (this directory) | Apps, themes, settings, anything you expect to change | Applies to the running machine with `apply.sh` |
 
 The config may rely on the base: the `sddm` role checks that SDDM is installed instead of installing it. It must not depend on installer settings; machine values such as `user_name` belong in `host_vars`.
@@ -119,6 +119,6 @@ The first run happens before the login screen starts, and every run is as root. 
 |---|---|
 | `git pull failed` | Local changes or a diverged branch in `/opt/llangvilla`. Inspect with `git -C /opt/llangvilla status`, or apply as is with `--no-pull` |
 | `Check the login user exists` fails | `user_name` doesn't match the installer's `USER_NAME` |
-| `Check SDDM is installed` fails | SDDM is missing from the base; it comes from `autoinstall/packages.txt` |
+| `Check SDDM is installed` fails | SDDM is missing from the base; it comes from `installer/packages.txt` |
 | First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
 | A run hangs | A task restarts SDDM or waits for a desktop session (see [Writing tasks](#writing-tasks)) |
