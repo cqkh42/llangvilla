@@ -13,8 +13,9 @@ Three separate parts, kept apart on purpose (root `README.md` has the flow):
   - `packages.txt` – the clean-slate base package list; copied onto the stick, not baked into the ISO. Apps go in the config instead.
   - `autoinstall.env.example` – template for the stick's `autoinstall.env`, with double-underscore placeholders.
 - `config/` – **part 2, personalisation.** Live: re-applied on the box as it changes. `README.md` is the guide.
-  - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, install Ansible if missing, run the playbook. Nix home-manager will slot in here.
-  - `ansible/` – `site.yml` with roles `packages`, `sddm`, `setup_user`; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
+  - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, full `pacman -Syu` (skip with `--no-upgrade`), install Ansible if missing, run the playbook. Nix home-manager will slot in here.
+  - `assets/` – wallpaper source (`seafront.svg`) and a 3840×2160 render.
+  - `ansible/` – `site.yml` with roles `packages`, `sddm`, `user_avatar`, each tagged with its own name; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
 - `vm/` – **part 3, try it.** `test-vm.sh` installs into a QEMU/OVMF VM from a generated test stick, checks the base over SSH, then applies the working tree's `config/` and checks again; `config` alone iterates on config changes; `boot`/`live`/`ssh` for poking around. Uses the working tree's `install.sh`, `packages.txt` and `config/` (no ISO rebuild). `README.md` is the guide.
 - `.github/workflows/lint.yml` – shellcheck on all scripts, `install.sh --check` on the template, yamllint, ansible-lint and a playbook syntax check.
 - `TODO.md` – the to-do list (moved out of the root README).

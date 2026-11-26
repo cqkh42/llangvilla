@@ -1,0 +1,37 @@
+---
+# AccountsService serves the avatar to the login screen and to Plasma. It expects
+# the icon owned by root, plus a users/<name> file whose Icon= points at it.
+- name: Create the AccountsService directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /var/lib/AccountsService/icons
+      mode: "0775"
+    - path: /var/lib/AccountsService/users
+      mode: "0700"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Install the avatar as the user's AccountsService icon
+  ansible.builtin.copy:
+    src: avatar.png
+    dest: "/var/lib/AccountsService/icons/{{ user_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Only the Icon key is ours: AccountsService writes other keys to this file itself.
+- name: Point AccountsService at the icon
+  community.general.ini_file:
+    path: "/var/lib/AccountsService/users/{{ user_name }}"
+    section: User
+    option: Icon
+    value: "/var/lib/AccountsService/icons/{{ user_name }}"
+    no_extra_spaces: true
+    owner: root
+    group: root
+    mode: "0600"

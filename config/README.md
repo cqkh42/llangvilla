@@ -9,8 +9,8 @@ It is an Ansible playbook behind a single entrypoint, `apply.sh`. Nix home-manag
 On the machine:
 
 ```bash
-sudo /opt/llangvilla/config/apply.sh                    # pull and apply
-sudo /opt/llangvilla/config/apply.sh -- --check --diff  # dry run
+sudo /opt/llangvilla/config/apply.sh                                 # pull, upgrade, apply
+sudo /opt/llangvilla/config/apply.sh --no-upgrade -- --check --diff  # dry run
 ```
 
 Before pushing a change, from a checkout:
@@ -23,25 +23,27 @@ vm/test-vm.sh config                                    # apply the working tree
 ## Usage
 
 ```
-apply.sh [--no-pull] [-- ANSIBLE-PLAYBOOK-ARGS...]
+apply.sh [--no-pull] [--no-upgrade] [-- ANSIBLE-PLAYBOOK-ARGS...]
 ```
 
-Run as root. Without `--no-pull`, `apply.sh` does the following:
+Run as root. `apply.sh` does the following:
 
-1. If its directory is in a git checkout, runs `git pull --ff-only` and re-runs the updated `apply.sh`.
-2. Installs `ansible` with pacman if `ansible-playbook` is missing.
-3. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
+1. Unless `--no-pull`: if its directory is in a git checkout, runs `git pull --ff-only` and re-runs the updated `apply.sh`.
+2. Unless `--no-upgrade`: upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
+3. Installs `ansible` with pacman if `ansible-playbook` is missing.
+4. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
 
 | Option | Effect |
 |---|---|
 | `--no-pull` | Apply the files as they are. Used by the VM test and for local edits |
-| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --check --diff`, `-- --tags sddm`, `-- -v` |
+| `--no-upgrade` | Skip the system upgrade. Use it for dry runs; a real run should upgrade |
+| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --check --diff`, `-- --tags user_avatar`, `-- -v`. Each role has a tag of its own name |
 | `-h`, `--help` | Show usage |
 
 | Exit status | Meaning |
 |---|---|
 | `0` | Applied successfully |
-| non-zero | `git pull`, the Ansible install or the playbook failed. The output says which |
+| non-zero | `git pull`, the system upgrade, the Ansible install or the playbook failed. The output says which |
 
 ### Where it runs
 
@@ -63,16 +65,17 @@ git clone https://github.com/cqkh42/llangvilla.git /opt/llangvilla
 ```
 config/
 ├── apply.sh                       entrypoint
+├── assets/                        wallpaper source (SVG) and a 3840×2160 render
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
     ├── host_vars/optiplex.yml     per-machine variables
     ├── requirements.yml           collections, for linting only
-    ├── site.yml                   checks the user exists, then runs the roles
+    ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
         ├── packages/              apps and tools; packages to remove
         ├── sddm/                  Catppuccin theme and SDDM drop-in config
-        └── setup_user/            user avatar for SDDM and AccountsService
+        └── user_avatar/           user avatar, through AccountsService
 ```
 
 ## Variables
@@ -103,7 +106,7 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
 - **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` warns otherwise.
 - **Use `become_user: "{{ user_name }}"`** for user-level tasks.
-- **Use `community.general.pacman`** for packages. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
+- **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put SDDM settings in `/etc/sddm.conf.d/*.conf`**, not `/etc/sddm.conf`.
 
 ## Making a change
@@ -117,6 +120,7 @@ The first run happens before the login screen starts, and every run is as root. 
 
 | Symptom | Cause and fix |
 |---|---|
+| `System upgrade failed` | A pacman problem (mirror, keyring, conflict). Fix it with pacman directly, or apply without upgrading: `--no-upgrade` |
 | `git pull failed` | Local changes or a diverged branch in `/opt/llangvilla`. Inspect with `git -C /opt/llangvilla status`, or apply as is with `--no-pull` |
 | `Check the login user exists` fails | `user_name` doesn't match the installer's `USER_NAME` |
 | `Check SDDM is installed` fails | SDDM is missing from the base; it comes from `installer/packages.txt` |

@@ -8,11 +8,8 @@
 4. documentation
 5. move the builder to an arch base
 
-## sddm
-1. use conf.d instead
-2. wayland greeter
-3. remember last user & remember last session
-4. cursor theme~/.face.icon
+## Login screen
+1. Replace SDDM with Plasma Login Manager, themed to match (config design doc, milestones 2-3)
 
 ## Misc
 
