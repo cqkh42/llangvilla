@@ -381,7 +381,7 @@ s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
 root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
 # On failure, show what sshd decided and which files set it.
 sshd_no_pw() {
-  s sshd -T | grep -qx 'passwordauthentication no' && return 0
+  s sshd -T | grep -qix 'passwordauthentication no' && return 0   # OpenSSH 10 prints CamelCase
   s sshd -T 2>&1 | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|usepam) '
   s grep -HnEi '^[[:space:]]*(include|passwordauthentication|kbdinteractiveauthentication|usepam|match)' \
     /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
@@ -438,12 +438,14 @@ CHECKS
 
   # From the outside: password logins must be refused when key-only is configured.
   if [[ $(env_value SSH_PASSWORD_AUTH 0) == 0 ]]; then
-    if ssh -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
+    local said
+    said=$(ssh -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
          -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive \
-         "$vm_user@127.0.0.1" true 2>&1 | grep -q 'Permission denied (publickey)'; then
+         "$vm_user@127.0.0.1" true 2>&1 || true)
+    if grep -qi 'permission denied (publickey)' <<<"$said"; then
       ok "SSH offers key login only (checked from the host)"
     else
-      warn "SSH still offers password login"; fails=1
+      warn "SSH did not refuse password login as expected. ssh said: ${said:-nothing}"; fails=1
     fi
   fi
 
@@ -454,7 +456,7 @@ CHECKS
 }
 
 do_config() {
-  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" state
+  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" sys_state
   vm_up
   wait_firstboot
 
@@ -483,10 +485,10 @@ do_config() {
 
   step "Rebooting to check the result comes up"
   vm_reboot
-  state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
-  [[ $state == running ]] || {
+  sys_state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
+  [[ $sys_state == running ]] || {
     ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl --failed --no-pager >&2 || true
-    die "After applying the config, systemd is '$state' (failed units above)."
+    die "After applying the config, systemd is '$sys_state' (failed units above)."
   }
   ok "systemd: running, no failed units"
   ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet display-manager.service \
