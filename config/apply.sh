@@ -66,7 +66,7 @@ if ! command -v ansible-playbook >/dev/null; then
   fi
 fi
 
-# 3. Apply. (Nix home-manager will slot in here as a second step.)
+# 3. Apply. The playbook ends with home-manager, the user layer (config/home).
 say "Running the Ansible playbook..."
 export ANSIBLE_CONFIG="$here/ansible/ansible.cfg"
 cd "$here/ansible"

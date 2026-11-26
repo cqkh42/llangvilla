@@ -461,6 +461,10 @@ do_config() {
   vm_sudo "$apply" || die "config/apply.sh failed (output above)."
   ok "Config applied"
 
+  ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
+    || die "home-manager produced no generation for $vm_user."
+  ok "home-manager applied the user layer"
+
   step "Applying it again: nothing should change"
   out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then

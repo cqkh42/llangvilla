@@ -2,7 +2,7 @@
 
 Personalises an installed machine: apps, fonts, the Colloid theme, the login screen's look, the avatar and system tweaks. It runs once on first boot through the installer's [first-boot hook](../installer/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
 
-It is an Ansible playbook behind a single entrypoint, `apply.sh`. Nix home-manager is planned as a second step behind the same entrypoint.
+It is an Ansible playbook behind a single entrypoint, `apply.sh`. Ansible owns the system; its last role runs Nix home-manager, which owns the user's home (dotfiles, and later the Plasma layout). See [User layer](#user-layer).
 
 ## Quick start
 
@@ -66,6 +66,10 @@ git clone https://github.com/cqkh42/llangvilla.git /opt/llangvilla
 config/
 ├── apply.sh                       entrypoint
 ├── assets/                        wallpaper source (SVG) and a 3840×2160 render
+├── home/                          the user layer: a Nix flake for home-manager
+│   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager), pinned by the lock
+│   ├── home.nix                   settings every user gets
+│   └── modules/                   one file per concern: git.nix, shell.nix, ...
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
@@ -76,7 +80,9 @@ config/
         ├── packages/              apps, tools and fonts
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
-        └── user_avatar/           user avatar, through AccountsService
+        ├── user_avatar/           user avatar, through AccountsService
+        ├── nix/                   Nix from pacman, daemon, flakes, nix-users
+        └── home_manager/          runs home-manager switch as the user (last role)
 ```
 
 ## Variables
@@ -88,7 +94,31 @@ config/
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | Colloid dark, 24 px, Inter 10 | The login screen's look |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg` | Installed as the `Seafront` wallpaper package, used by the login screen (and later the desktop) |
+| `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
 | `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
+
+## User layer
+
+`config/home/` is a Nix flake for [home-manager](https://github.com/nix-community/home-manager), which owns everything in the user's home. The `home_manager` role applies it as the user:
+
+```bash
+nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#jack
+```
+
+- **Pinned.** `flake.lock` fixes nixpkgs and home-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
+- **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
+- **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
+- **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, inside first boot's 30-minute window. Later runs take seconds.
+- **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
+
+What goes where:
+
+| Comes from | What | Why |
+|---|---|---|
+| pacman (Ansible) | GUI apps, themes, fonts, anything that plugs into Plasma or Qt | Nix GUI apps need nixGL on Arch; Nix Qt plugins can't load into Arch's Qt; system users (the login screen) can't see the Nix profile |
+| Nix (home-manager) | Dotfiles, settings, command-line tools | Declarative, pinned, roll back with `home-manager generations` |
+
+To add something, add a module under `modules/` and import it from `home.nix`. Check it with `nix flake check ./config/home` and `nix build ./config/home#homeConfigurations.jack.activationPackage`, format with `git ls-files -z 'config/home/*.nix' | xargs -0 nix run ./config/home#formatter.x86_64-linux --` (CI runs all three), then `vm/test-vm.sh config`.
 
 ## Themes
 
@@ -121,7 +151,7 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Not reboot.** The hook reboots once after a successful run. A reboot mid-run skips the done marker, so the hook would run again.
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
 - **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` warns otherwise.
-- **Use `become_user: "{{ user_name }}"`** for user-level tasks.
+- **Put user-level settings in `config/home`** (home-manager), not in Ansible. For the rare user-level Ansible task, use `become: true` and `become_user: "{{ user_name }}"`.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
 
@@ -142,6 +172,7 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check Plasma Login Manager is installed` fails | PLM is missing from the base; it comes from `installer/packages.txt` |
 | `Look up the login screen's system user` fails | PLM's system user isn't `plasmalogin`. Find it with `getent passwd \| grep -i login` and set `login_screen_greeter_user` |
 | The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
+| `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: the user isn't in `nix-users` yet (re-run `apply.sh`), or `nix-daemon.socket` isn't running |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

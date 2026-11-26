@@ -19,3 +19,7 @@
       tags: [login_screen]
     - role: user_avatar
       tags: [user_avatar]
+    - role: nix
+      tags: [nix]
+    - role: home_manager   # last: the user layer builds on everything above
+      tags: [home_manager]
