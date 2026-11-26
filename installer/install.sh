@@ -502,9 +502,10 @@ EOF
 
   unit_before="" unit_reboot="" unit_extra=""
   if [[ $FIRSTBOOT_BEFORE_LOGIN == 1 ]]; then
-    # Run to completion BEFORE the login screen (SDDM) starts. A failure does not
-    # block SDDM; the unit simply tries again on the next boot.
-    unit_before="Before=display-manager.service"
+    # Run to completion BEFORE the login screen (the display manager) starts. A failure
+    # does not block it; the unit simply tries again on the next boot. plasmalogin is
+    # named as well as the display-manager alias, so the order holds either way.
+    unit_before="Before=display-manager.service plasmalogin.service"
     unit_extra=$'TimeoutStartSec=1800\nStandardOutput=journal+console\nStandardError=journal+console'
   else
     # Run in the background while the login screen is already showing; retry every 60 s.
@@ -538,7 +539,7 @@ fi
 UNITS=(NetworkManager.service systemd-timesyncd.service fstrim.timer systemd-boot-update.service)
 [[ $ENABLE_SSH == 1 ]] && UNITS+=(sshd.service)
 [[ -n $CONFIG_REPO_URL ]] && UNITS+=(NetworkManager-wait-online.service llangvilla-firstboot.service)
-for u in sddm.service bluetooth.service; do has_unit "$u" && UNITS+=("$u"); done
+for u in plasmalogin.service bluetooth.service; do has_unit "$u" && UNITS+=("$u"); done
 in_target systemctl enable "${UNITS[@]}" || die "Enabling services failed: ${UNITS[*]}"
 
 # ---------------------------------------------------------------- 9. bootloader (systemd-boot)

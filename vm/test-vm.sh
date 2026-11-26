@@ -144,7 +144,8 @@ qemu_base() {
      -drive "file=$target,if=none,id=target,format=qcow2"
      -device "virtio-blk-pci,drive=target,serial=llangvilla-test,bootindex=1"
      -device virtio-rng-pci
-     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:${ssh_port}-:22")
+     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:${ssh_port}-:22"
+     -monitor "unix:$state/monitor.sock,server,nowait")
   if [[ -w /dev/kvm ]]; then
     Q+=(-accel kvm -cpu host)
   else
@@ -221,6 +222,25 @@ wait_ssh() {
 }
 
 # Run a command on the VM as root (the test password goes to sudo on stdin).
+# Save a PNG of the VM's screen under $state/logs/screens/ (the VM workflow uploads
+# logs/). Uses QEMU's monitor; a failure only warns.
+vm_screenshot() {
+  local out="$state/logs/screens/$1.png"
+  mkdir -p "${out%/*}"
+  rm -f "$out"
+  python3 - "$state/monitor.sock" "$out" <<'PY' 2>/dev/null || true
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX)
+s.connect(sys.argv[1])
+time.sleep(0.5)
+s.recv(65536)
+s.sendall(f"screendump {sys.argv[2]} -f png\n".encode())
+time.sleep(3)
+s.close()
+PY
+  if [[ -s $out ]]; then info "Screenshot of the screen: $out"; else warn "Could not take a screenshot ($1)."; fi
+}
+
 vm_sudo() {
   # shellcheck disable=SC2029  # expanding on the client side is the point
   ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' $*"
@@ -361,6 +381,17 @@ s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
 root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
 sshd_no_pw()   { s sshd -T | grep -qx 'passwordauthentication no'; }
 wifi_profile() { [[ $(s stat -c %a /etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection) == 600 ]]; }
+# Any display manager registers its login screen with logind as a "greeter" session.
+greeter_session() {
+  local i id
+  for i in $(seq 1 30); do
+    for id in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+      [[ $(loginctl show-session "$id" -p Class --value) == greeter ]] && return 0
+    done
+    sleep 2
+  done
+  echo "no greeter session after 60 s"; return 1
+}
 
 state=$(timeout 300 systemctl is-system-running --wait 2>&1 </dev/null)
 if [[ $state == running ]]; then pass "systemd: running, no failed units"
@@ -385,7 +416,9 @@ check "LANG is $EXP_LOCALE"        grep -qx "LANG=$EXP_LOCALE" /etc/locale.conf
 check "zram swap is on"            bash -c 'swapon --show=NAME --noheadings | grep -q zram'
 check "NetworkManager is active"   systemctl is-active NetworkManager
 check "sshd is active"             systemctl is-active sshd
-if pacman -Q sddm >/dev/null 2>&1; then check "sddm (login screen) is active" systemctl is-active sddm; fi
+check "display manager is active ($(systemctl show -p Id --value display-manager.service 2>/dev/null))" \
+  systemctl is-active display-manager.service
+check "login screen is up (a logind greeter session)" greeter_session
 if [[ $EXP_LOCK_ROOT == 1 ]]; then check "root is locked" root_locked; fi
 if [[ $EXP_SSH_PW == 0 ]]; then check "sshd refuses passwords" sshd_no_pw; fi
 if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
@@ -407,6 +440,7 @@ CHECKS
     fi
   fi
 
+  vm_screenshot login-after-install
   vm_down
   (( fails == 0 )) || die "Some checks failed (see above)."
   ok "All base-system checks passed"
@@ -444,8 +478,10 @@ do_config() {
     die "After applying the config, systemd is '$state' (failed units above)."
   }
   ok "systemd: running, no failed units"
-  ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet sddm || die "sddm (login screen) is not active."
-  ok "sddm (login screen) is active"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet display-manager.service \
+    || die "The display manager (login screen) is not active."
+  ok "display manager (login screen) is active"
+  vm_screenshot login-after-config
 
   vm_down
   ok "Config applied cleanly. See it with: vm/test-vm.sh boot"

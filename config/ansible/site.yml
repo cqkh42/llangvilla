@@ -13,7 +13,5 @@
   roles:
     - role: packages
       tags: [packages]
-    - role: sddm
-      tags: [sddm]
     - role: user_avatar
       tags: [user_avatar]

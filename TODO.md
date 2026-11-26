@@ -9,7 +9,7 @@
 5. move the builder to an arch base
 
 ## Login screen
-1. Replace SDDM with Plasma Login Manager, themed to match (config design doc, milestones 2-3)
+1. Theme Plasma Login Manager to match the desktop (config design doc, milestone 3)
 
 ## Misc
 

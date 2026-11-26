@@ -15,7 +15,7 @@ Three separate parts, kept apart on purpose (root `README.md` has the flow):
 - `config/` – **part 2, personalisation.** Live: re-applied on the box as it changes. `README.md` is the guide.
   - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, full `pacman -Syu` (skip with `--no-upgrade`), install Ansible if missing, run the playbook. Nix home-manager will slot in here.
   - `assets/` – wallpaper source (`seafront.svg`) and a 3840×2160 render.
-  - `ansible/` – `site.yml` with roles `packages`, `sddm`, `user_avatar`, each tagged with its own name; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
+  - `ansible/` – `site.yml` with roles `packages`, `user_avatar`, each tagged with its own name; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
 - `vm/` – **part 3, try it.** `test-vm.sh` installs into a QEMU/OVMF VM from a generated test stick, checks the base over SSH, then applies the working tree's `config/` and checks again; `config` alone iterates on config changes; `boot`/`live`/`ssh` for poking around. Uses the working tree's `install.sh`, `packages.txt` and `config/` (no ISO rebuild). `README.md` is the guide.
 - `.github/workflows/lint.yml` – shellcheck on all scripts, `install.sh --check` on the template, yamllint, ansible-lint and a playbook syntax check.
 - `TODO.md` – the to-do list (moved out of the root README).
@@ -29,5 +29,5 @@ The only link between parts 1 and 2 is the first-boot hook: the installer clones
 - Don't run the playbook or `config/apply.sh` (`--syntax-check` is fine), `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `vm/test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks; use the VM workflow.
 - Test installer or base package changes with `vm/test-vm.sh`, config changes with `vm/test-vm.sh config` (`vm/README.md`).
 - Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. Keep the placeholders.
-- The config's first run is before login: never restart SDDM or reboot from it (see `config/README.md`, Writing tasks).
+- The config's first run is before login: never restart the display manager (`plasmalogin`) or reboot from it (see `config/README.md`, Writing tasks).
 - Scripts use `set -euo pipefail` (`install.sh` uses `-uo`, deliberately, so failures drop to a shell). Keep that style.
