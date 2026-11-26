@@ -144,7 +144,8 @@ qemu_base() {
      -drive "file=$target,if=none,id=target,format=qcow2"
      -device "virtio-blk-pci,drive=target,serial=llangvilla-test,bootindex=1"
      -device virtio-rng-pci
-     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:${ssh_port}-:22")
+     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:${ssh_port}-:22"
+     -monitor "unix:$state/monitor.sock,server,nowait")
   if [[ -w /dev/kvm ]]; then
     Q+=(-accel kvm -cpu host)
   else
@@ -221,6 +222,28 @@ wait_ssh() {
 }
 
 # Run a command on the VM as root (the test password goes to sudo on stdin).
+# Save a PNG of the VM's screen under $state/logs/screens/ (the VM workflow uploads
+# logs/). Uses QEMU's monitor; a failure only warns. A Shift press first wakes the
+# login screen, which fades to just the clock after a while without input.
+vm_screenshot() {
+  local out="$state/logs/screens/$1.png"
+  mkdir -p "${out%/*}"
+  rm -f "$out"
+  python3 - "$state/monitor.sock" "$out" <<'PY' 2>/dev/null || true
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX)
+s.connect(sys.argv[1])
+time.sleep(0.5)
+s.recv(65536)
+s.sendall(b"sendkey shift\n")
+time.sleep(2)
+s.sendall(f"screendump {sys.argv[2]} -f png\n".encode())
+time.sleep(3)
+s.close()
+PY
+  if [[ -s $out ]]; then info "Screenshot of the screen: $out"; else warn "Could not take a screenshot ($1)."; fi
+}
+
 vm_sudo() {
   # shellcheck disable=SC2029  # expanding on the client side is the point
   ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' $*"
@@ -359,8 +382,26 @@ fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
 check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-failed}"; fi; }
 s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
 root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
-sshd_no_pw()   { s sshd -T | grep -qx 'passwordauthentication no'; }
+# On failure, show what sshd decided and which files set it.
+sshd_no_pw() {
+  s sshd -T | grep -qix 'passwordauthentication no' && return 0   # OpenSSH 10 prints CamelCase
+  s sshd -T 2>&1 | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|usepam) '
+  s grep -HnEi '^[[:space:]]*(include|passwordauthentication|kbdinteractiveauthentication|usepam|match)' \
+    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
+  return 1
+}
 wifi_profile() { [[ $(s stat -c %a /etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection) == 600 ]]; }
+# Any display manager registers its login screen with logind as a "greeter" session.
+greeter_session() {
+  local i id
+  for i in $(seq 1 30); do
+    for id in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+      [[ $(loginctl show-session "$id" -p Class --value) == greeter ]] && return 0
+    done
+    sleep 2
+  done
+  echo "no greeter session after 60 s"; return 1
+}
 
 state=$(timeout 300 systemctl is-system-running --wait 2>&1 </dev/null)
 if [[ $state == running ]]; then pass "systemd: running, no failed units"
@@ -385,7 +426,9 @@ check "LANG is $EXP_LOCALE"        grep -qx "LANG=$EXP_LOCALE" /etc/locale.conf
 check "zram swap is on"            bash -c 'swapon --show=NAME --noheadings | grep -q zram'
 check "NetworkManager is active"   systemctl is-active NetworkManager
 check "sshd is active"             systemctl is-active sshd
-if pacman -Q sddm >/dev/null 2>&1; then check "sddm (login screen) is active" systemctl is-active sddm; fi
+check "display manager is active ($(systemctl show -p Id --value display-manager.service 2>/dev/null))" \
+  systemctl is-active display-manager.service
+check "login screen is up (a logind greeter session)" greeter_session
 if [[ $EXP_LOCK_ROOT == 1 ]]; then check "root is locked" root_locked; fi
 if [[ $EXP_SSH_PW == 0 ]]; then check "sshd refuses passwords" sshd_no_pw; fi
 if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
@@ -398,22 +441,25 @@ CHECKS
 
   # From the outside: password logins must be refused when key-only is configured.
   if [[ $(env_value SSH_PASSWORD_AUTH 0) == 0 ]]; then
-    if ssh -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
+    local said
+    said=$(ssh -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
          -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive \
-         "$vm_user@127.0.0.1" true 2>&1 | grep -q 'Permission denied (publickey)'; then
+         "$vm_user@127.0.0.1" true 2>&1 || true)
+    if grep -qi 'permission denied (publickey)' <<<"$said"; then
       ok "SSH offers key login only (checked from the host)"
     else
-      warn "SSH still offers password login"; fails=1
+      warn "SSH did not refuse password login as expected. ssh said: ${said:-nothing}"; fails=1
     fi
   fi
 
+  vm_screenshot login-after-install
   vm_down
   (( fails == 0 )) || die "Some checks failed (see above)."
   ok "All base-system checks passed"
 }
 
 do_config() {
-  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" state
+  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" sys_state
   vm_up
   wait_firstboot
 
@@ -427,6 +473,10 @@ do_config() {
   vm_sudo "$apply" || die "config/apply.sh failed (output above)."
   ok "Config applied"
 
+  ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
+    || die "home-manager produced no generation for $vm_user."
+  ok "home-manager applied the user layer"
+
   step "Applying it again: nothing should change"
   out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
@@ -438,14 +488,16 @@ do_config() {
 
   step "Rebooting to check the result comes up"
   vm_reboot
-  state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
-  [[ $state == running ]] || {
+  sys_state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
+  [[ $sys_state == running ]] || {
     ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl --failed --no-pager >&2 || true
-    die "After applying the config, systemd is '$state' (failed units above)."
+    die "After applying the config, systemd is '$sys_state' (failed units above)."
   }
   ok "systemd: running, no failed units"
-  ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet sddm || die "sddm (login screen) is not active."
-  ok "sddm (login screen) is active"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet display-manager.service \
+    || die "The display manager (login screen) is not active."
+  ok "display manager (login screen) is active"
+  vm_screenshot login-after-config
 
   vm_down
   ok "Config applied cleanly. See it with: vm/test-vm.sh boot"
@@ -491,7 +543,13 @@ case $cmd in
   config)  do_config ;;
   all)     do_install
            if [[ -n $stick_dev ]]; then info "Skipping check and config (--stick: the test key is not on that install)"
-           else do_check; do_config; fi ;;
+           else
+             # A failed base check still lets the config phase run, so one run reports both.
+             base_ok=1
+             ( do_check ) || base_ok=0
+             do_config
+             (( base_ok )) || die "The base-system checks failed (see above); the config phase ran anyway."
+           fi ;;
   boot)    do_boot ;;
   live)    do_live ;;
   ssh)     do_ssh ;;

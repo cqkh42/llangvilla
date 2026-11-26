@@ -1,0 +1,6 @@
+---
+# Safe at first boot: this is the Nix daemon, not the display manager.
+- name: Restart the Nix daemon
+  ansible.builtin.systemd_service:
+    name: nix-daemon.service
+    state: restarted

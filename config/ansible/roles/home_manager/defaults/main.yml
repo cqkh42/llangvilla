@@ -1,0 +1,5 @@
+---
+# The flake in config/home, next to this playbook's directory, so the VM test's
+# copy of the working tree applies its own flake. Its homeConfigurations has one
+# entry per login user, named like user_name.
+home_manager_flake_dir: "{{ (playbook_dir ~ '/../home') | realpath }}"

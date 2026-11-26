@@ -1,6 +1,7 @@
 ---
 # Personalises the machine. Run it with config/apply.sh (config/README.md), never
 # directly with ansible-pull: apply.sh is the one entrypoint, at first boot and later.
+# Each role has a tag of its own name, so `apply.sh -- --tags user_avatar` runs one role.
 - name: Personalise the OptiPlex
   hosts: optiplex
   pre_tasks:
@@ -8,7 +9,17 @@
       ansible.builtin.getent:
         database: passwd
         key: "{{ user_name }}"
+      tags: [always]
   roles:
     - role: packages
-    - role: sddm
-    - role: setup_user
+      tags: [packages]
+    - role: theme
+      tags: [theme]
+    - role: login_screen
+      tags: [login_screen]
+    - role: user_avatar
+      tags: [user_avatar]
+    - role: nix
+      tags: [nix]
+    - role: home_manager   # last: the user layer builds on everything above
+      tags: [home_manager]

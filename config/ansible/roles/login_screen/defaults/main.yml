@@ -1,0 +1,23 @@
+---
+# The look of the login screen (Plasma Login Manager). It has no themes of its own:
+# it uses a colour scheme, icons, cursor and font from its system user's Plasma
+# settings, and a wallpaper from its config. The theme role installs the Colloid parts.
+login_screen_color_scheme: ColloidDark
+login_screen_icon_theme: Colloid-Dark
+login_screen_cursor_theme: Colloid-dark-cursors
+login_screen_cursor_size: 24
+login_screen_font: "Inter,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
+
+# The wallpaper, from config/assets, installed as a Plasma wallpaper package so
+# the desktop can use the same one.
+login_screen_wallpaper_src: "{{ playbook_dir }}/../assets/seafront-3840x2160.jpg"
+login_screen_wallpaper_name: Seafront
+login_screen_wallpaper_size: 3840x2160
+
+# PLM reads drop-ins from /etc/plasmalogin.conf.d/. Some early builds were reported
+# to ignore them; if the VM screenshot shows the stock wallpaper, point this at
+# /etc/plasmalogin.conf instead.
+login_screen_config_file: /etc/plasmalogin.conf.d/10-llangvilla.conf
+
+# PLM's system user, whose Plasma settings the login screen reads.
+login_screen_greeter_user: plasmalogin

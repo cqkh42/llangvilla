@@ -1,0 +1,14 @@
+---
+# Colloid, installed system-wide so the login screen (a system user) sees it too.
+# Each theme is pinned to an exact commit: change the commit to upgrade, and the
+# role reinstalls that theme. Check new versions at github.com/vinceliuice.
+theme_colloid_kde_repo: https://github.com/vinceliuice/Colloid-kde
+theme_colloid_kde_version: b768904d10ba9fcb95abfb59538eab100b1fed1e     # main, 2026 (no release since 2022)
+theme_colloid_icons_repo: https://github.com/vinceliuice/Colloid-icon-theme
+theme_colloid_icons_version: e3a8f89fac888af715233f8f8ef0a5b1e350f0dd   # tag 2026-08-10
+theme_colloid_gtk_repo: https://github.com/vinceliuice/Colloid-gtk-theme
+theme_colloid_gtk_version: 6c2dc65865628bda9fdc8157a30cd5eda6fd41f9     # tag 2026-08-08
+
+# Where the sources are checked out, and the stamps that mark an installed version.
+theme_src_dir: /var/lib/llangvilla/src
+theme_stamp_dir: /var/lib/llangvilla/stamps

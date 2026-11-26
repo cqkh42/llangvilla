@@ -1,0 +1,109 @@
+---
+# Themes Plasma Login Manager to match the desktop. PLM comes from the base
+# (installer/packages.txt); this role only writes files it reads on start, so it
+# never restarts the display manager (config/README.md, Writing tasks).
+- name: Check Plasma Login Manager is installed (it comes from installer/packages.txt)
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/plasmalogin.service
+  register: login_screen_unit
+  failed_when: not login_screen_unit.stat.exists
+
+- name: Look up the login screen's system user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ login_screen_greeter_user }}"
+
+- name: Note the login screen user's home directory and group
+  ansible.builtin.set_fact:
+    login_screen_greeter_gid: "{{ ansible_facts.getent_passwd[login_screen_greeter_user][2] }}"
+    login_screen_greeter_home: "{{ ansible_facts.getent_passwd[login_screen_greeter_user][4] }}"
+
+# ---- wallpaper, as a Plasma wallpaper package
+- name: Create the wallpaper package directory
+  ansible.builtin.file:
+    path: "/usr/share/wallpapers/{{ login_screen_wallpaper_name }}/contents/images"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the wallpaper image
+  ansible.builtin.copy:
+    src: "{{ login_screen_wallpaper_src }}"
+    dest: "/usr/share/wallpapers/{{ login_screen_wallpaper_name }}/contents/images/{{ login_screen_wallpaper_size }}.jpg"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Describe the wallpaper package
+  ansible.builtin.copy:
+    dest: "/usr/share/wallpapers/{{ login_screen_wallpaper_name }}/metadata.json"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ {'KPlugin': {'Id': login_screen_wallpaper_name, 'Name': login_screen_wallpaper_name}} | to_nice_json }}\n"
+
+# ---- PLM's own config: the wallpaper
+- name: Create the PLM config directory
+  ansible.builtin.file:
+    path: "{{ login_screen_config_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Set the login screen wallpaper
+  ansible.builtin.copy:
+    dest: "{{ login_screen_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Written by config/ansible (login_screen role). Edit the role, not this file.
+      [Greeter]
+      WallpaperPluginId=org.kde.image
+
+      [Greeter][Wallpaper][org.kde.image][General]
+      Image=file:///usr/share/wallpapers/{{ login_screen_wallpaper_name }}/contents/images/{{ login_screen_wallpaper_size }}.jpg
+
+# ---- the greeter user's Plasma settings: colours, icons, font, cursor
+- name: Create the login screen user's config directory
+  ansible.builtin.file:
+    path: "{{ login_screen_greeter_home }}/.config"
+    state: directory
+    owner: "{{ login_screen_greeter_user }}"
+    group: "{{ login_screen_greeter_gid }}"
+    mode: "0755"
+
+- name: Set the login screen's colour scheme, icons and font
+  community.general.ini_file:
+    path: "{{ login_screen_greeter_home }}/.config/kdeglobals"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    owner: "{{ login_screen_greeter_user }}"
+    group: "{{ login_screen_greeter_gid }}"
+    mode: "0644"
+  loop:
+    - {section: General, option: ColorScheme, value: "{{ login_screen_color_scheme }}"}
+    - {section: General, option: font, value: "{{ login_screen_font }}"}
+    - {section: Icons, option: Theme, value: "{{ login_screen_icon_theme }}"}
+  loop_control:
+    label: "{{ item.section }}/{{ item.option }}"
+
+- name: Set the login screen's cursor
+  community.general.ini_file:
+    path: "{{ login_screen_greeter_home }}/.config/kcminputrc"
+    section: Mouse
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    no_extra_spaces: true
+    owner: "{{ login_screen_greeter_user }}"
+    group: "{{ login_screen_greeter_gid }}"
+    mode: "0644"
+  loop:
+    - {option: cursorTheme, value: "{{ login_screen_cursor_theme }}"}
+    - {option: cursorSize, value: "{{ login_screen_cursor_size }}"}
+  loop_control:
+    label: "Mouse/{{ item.option }}"

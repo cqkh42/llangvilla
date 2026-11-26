@@ -8,18 +8,12 @@
 4. documentation
 5. move the builder to an arch base
 
-## sddm
-1. use conf.d instead
-2. wayland greeter
-3. remember last user & remember last session
-4. cursor theme~/.face.icon
+## Config
 
-## Misc
+Milestones 1–5 of the config design are done (#14): Plasma Login Manager, Colloid dark with a Mac layout, the seafront wallpaper, Nix and home-manager. Next, dotfiles: #15.
 
-1. catpuccin kde
-2. headshot
-3. kvantum + catpuccin
-4. papirus icons
-5. catpuccin cursors
-6. add konsole/ wezterm
-7. firefox
+1. Catppuccin colours on top of Colloid (deferred; one `.colors` file)
+2. Kvantum, only if an app looks wrong (deferred)
+3. a terminal other than Konsole (e.g. wezterm), if wanted
+4. Flatpak and its theming (deferred)
+5. Plymouth boot splash (needs a design for the kernel command line)

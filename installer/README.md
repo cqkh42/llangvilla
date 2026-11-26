@@ -184,7 +184,7 @@ udisksctl unmount -b "$(findmnt -no SOURCE "$V")"
    - **Blank disk:** a `CONFIRM_SECONDS` countdown runs; any key aborts.
    - **Disk with data:** the installer waits for `YES`; anything else aborts without erasing.
 6. On `INSTALL COMPLETE` the machine powers off. Remove the stick.
-7. Power on. The first boot runs the [first-boot hook](#first-boot-hook) (a few minutes of console output) and reboots once. The second boot reaches the SDDM login screen.
+7. Power on. The first boot runs the [first-boot hook](#first-boot-hook) (a few minutes of console output) and reboots once. The second boot reaches the login screen (Plasma Login Manager).
 
 If Ventoy hangs after selecting the ISO, reboot and use Ventoy's GRUB2 mode (`F1` in the Ventoy menu shows the keys).
 
@@ -221,7 +221,7 @@ To find the OptiPlex's disk ID: boot the stick and press Enter at the `YES` prom
 | `TIMEZONE` | `Europe/London` | Zone under `/usr/share/zoneinfo` |
 | `LOCALE` | `en_GB.UTF-8` | Must be in `/etc/locale.gen` |
 | `KEYMAP` | `uk` | Console keymap |
-| `X11_KEYMAP` | `gb` | Keyboard layout for SDDM and Plasma |
+| `X11_KEYMAP` | `gb` | Keyboard layout for the login screen and Plasma |
 | `KERNELS` | `linux linux-lts` | Space-separated; the first is the default boot entry |
 | `EXTRA_PACKAGES` | `''` | Added to `packages.txt` for this machine |
 
@@ -263,7 +263,7 @@ To find the OptiPlex's disk ID: boot the stick and press Enter at the `YES` prom
 
 The base package list, one or more names per line, with `#` comments. It is copied onto the stick by every `build-usb.sh` run, so changing it needs no ISO rebuild. Names are checked against the repositories before the disk is touched.
 
-The installer always adds: `base`, `linux-firmware`, `mkinitcpio`, `sudo`, `networkmanager`, `zram-generator`, the `KERNELS`, CPU microcode, `btrfs-progs` (btrfs root), `openssh` (`ENABLE_SSH=1`), `git` (`CONFIG_REPO_URL` set) and `EXTRA_PACKAGES`. It enables `sddm` and `bluetooth` if they are installed.
+The installer always adds: `base`, `linux-firmware`, `mkinitcpio`, `sudo`, `networkmanager`, `zram-generator`, the `KERNELS`, CPU microcode, `btrfs-progs` (btrfs root), `openssh` (`ENABLE_SSH=1`), `git` (`CONFIG_REPO_URL` set) and `EXTRA_PACKAGES`. It enables `plasmalogin` (the login screen) and `bluetooth` if they are installed.
 
 Only add packages the machine needs to boot to a usable desktop on this hardware. Apps belong in the config, which applies without a reinstall ([what goes in the config](../config/README.md#what-goes-in-the-config)).
 
@@ -277,10 +277,10 @@ This is the only interface between the installer and the config. When `CONFIG_RE
 
 | | `FIRSTBOOT_BEFORE_LOGIN=1` (default) | `FIRSTBOOT_BEFORE_LOGIN=0` |
 |---|---|---|
-| Ordering | `Before=display-manager.service` | Runs alongside the login screen |
+| Ordering | `Before=display-manager.service plasmalogin.service` | Runs alongside the login screen |
 | Console | Output shown on the console | Journal only |
-| On failure | SDDM starts anyway; retried on the next boot | Retried every 60 s |
-| Timeout | 30 min, then SDDM starts | None |
+| On failure | The login screen starts anyway; retried on the next boot | Retried every 60 s |
+| Timeout | 30 min, then the login screen starts | None |
 
 The unit only runs while `/var/lib/llangvilla/firstboot.done` is absent, and that marker is written only on success. With `FIRSTBOOT_REBOOT_AFTER=1` the machine reboots once after success. The marker is written first, so the reboot cannot loop. Don't combine it with `FIRSTBOOT_BEFORE_LOGIN=0`: it could reboot during a session.
 

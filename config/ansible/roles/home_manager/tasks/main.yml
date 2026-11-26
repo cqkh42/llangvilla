@@ -1,0 +1,25 @@
+---
+# Applies the user layer as the login user. The home-manager CLI comes from the
+# flake's pinned input. `-b backup` moves aside files it would otherwise refuse to
+# overwrite (e.g. the stock ~/.bashrc becomes ~/.bashrc.backup).
+# The first run fetches nixpkgs and downloads from cache.nixos.org: minutes, not
+# seconds. Changed only when the switch produced a new generation.
+- name: Apply the user layer (home-manager switch)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      profile="$HOME/.local/state/nix/profiles/home-manager"
+      mkdir -p "${profile%/*}"   # home-manager needs the profiles directory to exist
+      before=$(readlink -f "$profile" || true)
+      nix run "path:$FLAKE#home-manager" -- switch -b backup --flake "path:$FLAKE#$HM_USER"
+      after=$(readlink -f "$profile" || true)
+      if [ "$before" = "$after" ]; then echo "hm-generation: unchanged"; else echo "hm-generation: new"; fi
+    executable: /bin/bash
+  environment:
+    FLAKE: "{{ home_manager_flake_dir }}"
+    HM_USER: "{{ user_name }}"
+    NIX_REMOTE: daemon   # the store belongs to root; go through the daemon
+  become: true
+  become_user: "{{ user_name }}"
+  register: home_manager_switch
+  changed_when: "'hm-generation: new' in home_manager_switch.stdout"

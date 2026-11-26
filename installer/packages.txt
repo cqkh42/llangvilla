@@ -9,10 +9,18 @@
 #
 # One or more names per line, '#' starts a comment. build-usb.sh and vm/test-vm.sh copy
 # this file onto the stick on every run, so edit it here, not on the stick.
-# Services are enabled when their package is present: sddm, bluetooth.
+# Services are enabled when their package is present: plasmalogin, bluetooth.
 
-# --- desktop: KDE Plasma (Wayland) with SDDM
-plasma-meta sddm konsole dolphin
+# --- desktop: KDE Plasma (Wayland) with Plasma Login Manager
+# Listed one by one instead of plasma-meta, which would also pull in plasma-welcome
+# and SDDM's settings module. Their dependencies (kwin, libplasma, ...) come along.
+plasma-desktop plasma-login-manager konsole dolphin
+breeze breeze-gtk kde-gtk-config qqc2-breeze-style plasma-integration xdg-desktop-portal-kde
+systemsettings kinfocenter kmenuedit kde-cli-tools kscreen powerdevil polkit-kde-agent
+plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt plasma-firewall plasma-vault print-manager
+kwallet-pam ksshaskpass kwrited drkonqi
+kdeplasma-addons milou spectacle discover plasma-systemmonitor ksystemstats plasma-browser-integration
+plasma-workspace-wallpapers ocean-sound-theme
 
 # --- audio: PipeWire
 pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber gst-plugin-pipewire libpulse

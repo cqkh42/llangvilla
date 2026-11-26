@@ -1,7 +1,8 @@
 ---
 # Apps and tools on top of the base system. The base (desktop, drivers, audio,
 # networking) comes from installer/packages.txt; see config/README.md for which
-# list a package belongs in.
+# list a package belongs in. The base lists Plasma's packages itself, without
+# plasma-welcome, so nothing needs removing here.
 packages_install:
   - kate
   - ark
@@ -9,7 +10,6 @@ packages_install:
   - vim
   - htop
   - btop
-
-# Pulled in by plasma-meta, removed here and kept out by IgnorePkg.
-packages_remove:
-  - plasma-welcome
+  # fonts: Inter for the interface, JetBrains Mono (Nerd Font) for terminals
+  - inter-font
+  - ttf-jetbrains-mono-nerd

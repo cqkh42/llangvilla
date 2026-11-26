@@ -78,18 +78,22 @@ The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO'
 - btrfs root on `@`; `/home`, `/var/log`, `/var/cache/pacman/pkg` and `/.snapshots` are mounted; fstab has no `subvolid=`
 - `/boot` is the vfat ESP; systemd-boot is installed with an entry and a kernel for each of `KERNELS`
 - zram swap is active
-- NetworkManager, sshd and SDDM are active
+- NetworkManager, sshd and the display manager are active, and the login screen is up (a logind greeter session)
 - root is locked
 - the Wi-Fi profile has mode 600
 - SSH refuses passwords (checked from the host)
 - with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist
+
+If a base check fails, `all` still runs the config phase and fails at the end, so one run reports both.
+
+It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/screens/` (QEMU's `screendump`, needs `python3`). The VM workflow uploads it with the installer logs.
 
 ### Config (`config`)
 
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
 2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails.
 3. Runs it again and warns if any task reports a change.
-4. Reboots and checks that systemd reports `running` and SDDM is active.
+4. Reboots and checks that systemd reports `running` and the display manager is active, then saves a screenshot of the login screen.
 
 ## Workflows
 

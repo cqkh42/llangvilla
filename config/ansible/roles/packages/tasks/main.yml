@@ -1,18 +1,6 @@
 ---
+# apply.sh has just run a full `pacman -Syu`, so no update_cache here.
 - name: Install apps and tools
   community.general.pacman:
     name: "{{ packages_install }}"
     state: present
-
-- name: Remove unwanted packages
-  community.general.pacman:
-    name: "{{ packages_remove }}"
-    state: absent
-    force: true
-    remove_nosave: true
-
-- name: Keep removed packages from coming back on upgrade
-  ansible.builtin.lineinfile:
-    path: /etc/pacman.conf
-    regexp: '^#?IgnorePkg'
-    line: "IgnorePkg = {{ packages_remove | join(' ') }}"

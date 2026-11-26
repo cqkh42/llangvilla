@@ -53,3 +53,21 @@ jobs:
         env:
           ANSIBLE_CONFIG: ansible.cfg
         run: ansible-playbook --syntax-check site.yml
+
+  home:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Flake check
+        run: nix flake check ./config/home
+
+      - name: Formatting (nixfmt)
+        run: git ls-files -z 'config/home/*.nix' | xargs -0 nix run ./config/home#formatter.x86_64-linux -- --check
+
+      - name: Build the home configuration
+        run: nix build ./config/home#homeConfigurations.jack.activationPackage --no-link
