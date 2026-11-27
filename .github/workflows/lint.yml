@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -62,6 +65,15 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+
+      # The Nix store (nixpkgs source, the home configuration's closure), keyed on
+      # the lock: a new cache only when an input changes. Runs after Nix is installed.
+      - name: Cache the Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('config/home/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 3G
 
       - name: Flake check
         run: nix flake check ./config/home

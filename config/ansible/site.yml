@@ -4,6 +4,10 @@
 # Each role has a tag of its own name, so `apply.sh -- --tags user_avatar` runs one role.
 - name: Personalise the OptiPlex
   hosts: optiplex
+  vars:
+    # The look (theme names, fonts, wallpaper), shared with the user layer. It lives
+    # in config/home because the Nix flake can only read files inside its directory.
+    look: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../home/theme.json') | from_json }}"
   pre_tasks:
     - name: Check the login user exists (created by the installer)
       ansible.builtin.getent:
@@ -13,6 +17,8 @@
   roles:
     - role: packages
       tags: [packages]
+    - role: boot
+      tags: [boot]
     - role: theme
       tags: [theme]
     - role: login_screen

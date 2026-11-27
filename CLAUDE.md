@@ -15,12 +15,12 @@ Three separate parts, kept apart on purpose (root `README.md` has the flow):
 - `config/` – **part 2, personalisation.** Live: re-applied on the box as it changes. `README.md` is the guide.
   - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, full `pacman -Syu` (skip with `--no-upgrade`), install Ansible if missing, run the playbook (which ends with home-manager).
   - `assets/` – wallpaper source (`seafront.svg`) and a 3840×2160 render.
-  - `home/` – the user layer: a Nix flake for home-manager and plasma-manager (`flake.nix`, committed `flake.lock`, `home.nix`, `modules/`: the Mac-style Plasma layout, GTK, menus, git, shell). Applied by the `home_manager` role with a `path:` flake reference.
-  - `ansible/` – `site.yml` with roles `packages`, `theme` (Colloid, pinned commits), `login_screen` (PLM's look), `user_avatar`, `nix`, `home_manager` (last), each tagged with its own name; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
+  - `home/` – the user layer: a Nix flake for home-manager and plasma-manager (`flake.nix`, committed `flake.lock`, `home.nix`, `theme.json` (the look: theme names, fonts, wallpaper; also read by Ansible's `login_screen` role), `modules/`: the Mac-style Plasma layout, GTK, menus, git, shell). Applied by the `home_manager` role with a `path:` flake reference.
+  - `ansible/` – `site.yml` with roles `packages`, `boot` (kernel command line), `theme` (Colloid, pinned commits), `login_screen` (PLM's look), `user_avatar`, `nix`, `home_manager` (last), each tagged with its own name; `host_vars/optiplex.yml` (`user_name`); own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
 - `vm/` – **part 3, try it.** `test-vm.sh` installs into a QEMU/OVMF VM from a generated test stick, checks the base over SSH, then applies the working tree's `config/` and checks again; `config` alone iterates on config changes; `boot`/`live`/`ssh` for poking around. Uses the working tree's `install.sh`, `packages.txt` and `config/` (no ISO rebuild). `README.md` is the guide.
 - `.github/workflows/lint.yml` – shellcheck on all scripts, `install.sh --check` on the template, yamllint, ansible-lint, a playbook syntax check, and for `config/home`: `nix flake check`, nixfmt and a build of the home configuration.
-- `TODO.md` – the to-do list (moved out of the root README).
-- `.github/workflows/vm-test.yml` – builds the ISO and runs `vm/test-vm.sh all` with KVM (manual only for now; weekly schedule to return, issue #11).
+- The to-do list is GitHub issues (no `TODO.md`).
+- `.github/workflows/vm-test.yml` – builds the ISO and runs `vm/test-vm.sh all` with KVM (weekly, Mondays, and manual).
 
 The only link between parts 1 and 2 is the first-boot hook: the installer clones the repo to `/opt/llangvilla` and runs `CONFIG_ENTRYPOINT` (`config/apply.sh`). Keep it that way: the installer must not know about Ansible, and the config must not assume installer settings.
 

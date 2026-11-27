@@ -1,0 +1,19 @@
+---
+# Kernel command line for every systemd-boot entry, whoever wrote it. Takes effect
+# from the next boot; apply.sh never reboots (config/README.md, Writing tasks).
+- name: Find the boot entries
+  ansible.builtin.find:
+    paths: /boot/loader/entries
+    patterns: "*.conf"
+  register: boot_entries
+
+# zswap off: swap is zram (from the base), and zswap in front of it only adds
+# overhead (Arch wiki, zram).
+- name: Turn zswap off on the kernel command line
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '^(options(?!.*\bzswap\.enabled=)[ \t][^\n]*?)[ \t]*$'
+    replace: '\1 zswap.enabled=0'
+  loop: "{{ boot_entries.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

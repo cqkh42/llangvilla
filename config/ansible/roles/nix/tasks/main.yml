@@ -45,3 +45,8 @@
     groups: nix-users
     append: true
   when: ansible_facts.getent_group['nix-users'] is not none
+
+# Restart the daemon now if nix.conf changed, not at the end of the play:
+# home_manager, later in this play, needs the new settings.
+- name: Apply a changed Nix daemon configuration before the user layer
+  ansible.builtin.meta: flush_handlers

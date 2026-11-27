@@ -2,17 +2,20 @@
 # The look of the login screen (Plasma Login Manager). It has no themes of its own:
 # it uses a colour scheme, icons, cursor and font from its system user's Plasma
 # settings, and a wallpaper from its config. The theme role installs the Colloid parts.
-login_screen_color_scheme: ColloidDark
-login_screen_icon_theme: Colloid-Dark
-login_screen_cursor_theme: Colloid-dark-cursors
-login_screen_cursor_size: 24
-login_screen_font: "Inter,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
+# The names come from config/home/theme.json (`look`, set in site.yml), which the
+# desktop's settings (config/home) read too, so the two always match.
+login_screen_color_scheme: "{{ look.colorScheme }}"
+login_screen_icon_theme: "{{ look.iconTheme }}"
+login_screen_cursor_theme: "{{ look.cursor.theme }}"
+login_screen_cursor_size: "{{ look.cursor.size }}"
+# KDE's font string: family, point size, then Qt's defaults for a normal weight.
+login_screen_font: "{{ look.font.family }},{{ look.font.size }},-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
 
 # The wallpaper, from config/assets, installed as a Plasma wallpaper package so
 # the desktop can use the same one.
 login_screen_wallpaper_src: "{{ playbook_dir }}/../assets/seafront-3840x2160.jpg"
-login_screen_wallpaper_name: Seafront
-login_screen_wallpaper_size: 3840x2160
+login_screen_wallpaper_name: "{{ look.wallpaper.name }}"
+login_screen_wallpaper_size: "{{ look.wallpaper.size }}"
 
 # PLM reads drop-ins from /etc/plasmalogin.conf.d/. Some early builds were reported
 # to ignore them; if the VM screenshot shows the stock wallpaper, point this at

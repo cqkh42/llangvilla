@@ -12,7 +12,7 @@
 #   check     boots the installed disk headless, checks the base system over SSH,
 #             powers off
 #   config    boots the installed disk headless, applies the working tree's config/
-#             (config/apply.sh --no-pull), applies it again to check nothing changes,
+#             (config/apply.sh --no-pull), applies it again and fails if anything changes,
 #             reboots, checks the login screen comes up, powers off. Repeatable on
 #             the same install, so it is the quick loop for config changes
 #   boot      boots the installed disk in a window to look around (SSH on port 2222)
@@ -424,6 +424,7 @@ done
 check "timezone is $EXP_TZ"        bash -c "readlink /etc/localtime | grep -q '$EXP_TZ\$'"
 check "LANG is $EXP_LOCALE"        grep -qx "LANG=$EXP_LOCALE" /etc/locale.conf
 check "zram swap is on"            bash -c 'swapon --show=NAME --noheadings | grep -q zram'
+check "zswap is off (kernel command line)" grep -qw zswap.enabled=0 /proc/cmdline
 check "NetworkManager is active"   systemctl is-active NetworkManager
 check "sshd is active"             systemctl is-active sshd
 check "display manager is active ($(systemctl show -p Id --value display-manager.service 2>/dev/null))" \
@@ -435,6 +436,7 @@ if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
 if [[ -n $EXP_FIRSTBOOT ]]; then
   check "first-boot hook done marker" test -e /var/lib/llangvilla/firstboot.done
   check "repo checkout in /opt/llangvilla" test -d /opt/llangvilla/.git
+  check "no first-boot failure notice" test ! -e /etc/issue.d/llangvilla-firstboot.issue
 fi
 exit $fails
 CHECKS
@@ -476,12 +478,15 @@ do_config() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
     || die "home-manager produced no generation for $vm_user."
   ok "home-manager applied the user layer"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" 'ls /var/log/llangvilla/apply-*.log' >/dev/null 2>&1 \
+    || die "apply.sh wrote no log to /var/log/llangvilla/."
+  ok "apply.sh logged to /var/log/llangvilla/"
 
   step "Applying it again: nothing should change"
   out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
     grep -E '^(changed|TASK)' <<<"$out" | grep -B1 '^changed' >&2 || true
-    warn "The second run changed things (above), so some task is not idempotent."
+    die "The second run changed things (above), so some task is not idempotent."
   else
     ok "Second run changed nothing"
   fi
@@ -497,6 +502,9 @@ do_config() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet display-manager.service \
     || die "The display manager (login screen) is not active."
   ok "display manager (login screen) is active"
+  ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qw zswap.enabled=0 /proc/cmdline \
+    || die "zswap.enabled=0 is not on the kernel command line after the reboot (boot role)."
+  ok "zswap is off (kernel command line)"
   vm_screenshot login-after-config
 
   vm_down

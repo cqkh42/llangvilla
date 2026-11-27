@@ -116,7 +116,8 @@ check_config() {
   [[ -n ${KERNELS// /} ]] || errs+=("KERNELS must name at least one kernel (e.g. 'linux linux-lts')")
 
   if [[ -n $WIFI_SSID ]]; then
-    (( ${#WIFI_PSK} >= 8 && ${#WIFI_PSK} <= 64 )) || errs+=("WIFI_PSK must be 8-63 characters (or 64 hex digits)")
+    (( ${#WIFI_PSK} >= 8 && ${#WIFI_PSK} <= 63 )) || [[ $WIFI_PSK =~ ^[0-9A-Fa-f]{64}$ ]] \
+      || errs+=("WIFI_PSK must be 8-63 characters (or 64 hex digits)")
   elif [[ -n $WIFI_PSK ]]; then
     errs+=("WIFI_PSK is set but WIFI_SSID is empty")
   fi
@@ -491,11 +492,34 @@ if [[ -n $CONFIG_REPO_URL ]]; then
     printf 'url=%q branch=%q entry=%q dir=/opt/llangvilla\n' \
       "$CONFIG_REPO_URL" "$CONFIG_REPO_BRANCH" "$CONFIG_ENTRYPOINT"
     cat <<'EOF'
+# On failure, say so where you will see it: the text console (/etc/issue.d) and
+# SSH or console logins (/etc/motd.d). Cleared by the next successful run.
+notice=llangvilla-firstboot
+on_exit() {
+  local rc=$?
+  if (( rc == 0 )); then
+    rm -f "/etc/issue.d/$notice.issue" "/etc/motd.d/$notice"
+    return
+  fi
+  mkdir -p /etc/issue.d /etc/motd.d
+  printf '%s\n' \
+    "First-boot configuration FAILED (exit $rc). It runs again on the next boot." \
+    "Logs: /var/log/llangvilla/ and journalctl -u llangvilla-firstboot.service" "" \
+    | tee "/etc/issue.d/$notice.issue" > "/etc/motd.d/$notice"
+}
+trap on_exit EXIT
+
+# The network can be slow to come up (Wi-Fi): retry the clone for about 5 minutes.
 if [[ ! -d $dir/.git ]]; then
-  rm -rf "$dir"
-  git clone ${branch:+--branch "$branch"} "$url" "$dir"
+  for attempt in $(seq 1 30); do
+    rm -rf "$dir"
+    git clone ${branch:+--branch "$branch"} "$url" "$dir" && break
+    (( attempt < 30 )) || { echo "Could not clone $url." >&2; exit 1; }
+    echo "Clone failed (attempt $attempt of 30), retrying in 10 s..." >&2
+    sleep 10
+  done
 fi
-exec bash "$dir/$entry"
+bash "$dir/$entry"
 EOF
   } > "$T/usr/local/lib/llangvilla/firstboot.sh"
   chmod 755 "$T/usr/local/lib/llangvilla/firstboot.sh"
@@ -505,8 +529,10 @@ EOF
     # Run to completion BEFORE the login screen (the display manager) starts. A failure
     # does not block it; the unit simply tries again on the next boot. plasmalogin is
     # named as well as the display-manager alias, so the order holds either way.
+    # No time limit: killing the run mid `pacman -Syu` could break the system. While it
+    # runs, SSH and the text consoles (Ctrl+Alt+F2) work.
     unit_before="Before=display-manager.service plasmalogin.service"
-    unit_extra=$'TimeoutStartSec=1800\nStandardOutput=journal+console\nStandardError=journal+console'
+    unit_extra=$'TimeoutStartSec=infinity\nStandardOutput=journal+console\nStandardError=journal+console'
   else
     # Run in the background while the login screen is already showing; retry every 60 s.
     unit_extra=$'Restart=on-failure\nRestartSec=60'
@@ -550,7 +576,8 @@ in_target bootctl install || in_target bootctl --no-variables install || die "bo
 
 ROOT_UUID=$(blkid -s UUID -o value "$ROOT")
 [[ -n $ROOT_UUID ]] || die "Could not read the root filesystem's UUID."
-options="root=UUID=$ROOT_UUID rw"
+# zswap off: swap is zram, and zswap in front of it only adds overhead (Arch wiki, zram).
+options="root=UUID=$ROOT_UUID rw zswap.enabled=0"
 [[ $ROOT_FS == btrfs ]] && options+=" rootflags=subvol=@"
 
 # Current mkinitcpio embeds microcode via its 'microcode' hook; older configs need an initrd line.

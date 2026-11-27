@@ -1,17 +1,21 @@
-# GTK apps follow the desktop: Colloid dark, Colloid icons and cursor, Inter.
-# The themes are installed system-wide by Ansible, so no packages here.
+# GTK apps follow the desktop: the names in ../theme.json (Colloid dark, Colloid
+# icons and cursor, Inter). The themes are installed system-wide by Ansible, so no
+# packages here.
+let
+  theme = builtins.fromJSON (builtins.readFile ../theme.json);
+in
 {
   gtk = {
     enable = true;
-    theme.name = "Colloid-Dark";
-    iconTheme.name = "Colloid-Dark";
+    theme.name = theme.gtkTheme;
+    iconTheme.name = theme.iconTheme;
     cursorTheme = {
-      name = "Colloid-dark-cursors";
-      size = 24;
+      inherit (theme.cursor) size;
+      name = theme.cursor.theme;
     };
     font = {
-      name = "Inter";
-      size = 10;
+      name = theme.font.family;
+      inherit (theme.font) size;
     };
   };
 

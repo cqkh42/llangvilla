@@ -32,6 +32,14 @@ Run as root. `apply.sh` does the following:
 2. Unless `--no-upgrade`: upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
 3. Installs `ansible` with pacman if `ansible-playbook` is missing.
 4. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
+5. After an upgrade, even a failed run, says what still runs old code. It never acts on it itself:
+   - **Reboot needed**: the running kernel was upgraded, so its modules are gone (plugging in new hardware can fail until you reboot).
+   - **Log out and in**: a desktop or login session still uses replaced libraries (Qt, KDE, Mesa and so on).
+   - **Services still using replaced libraries**: restart them with `systemctl restart`, or reboot.
+
+Only one run at a time: a second `apply.sh` while one is running exits with `Another apply.sh is already running`.
+
+Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the newest 20 are kept). A pacman lock left by a run that was cut off (a power cut, say) is removed when no pacman is running, so the next run can start.
 
 | Option | Effect |
 |---|---|
@@ -69,6 +77,7 @@ config/
 ├── home/                          the user layer: a Nix flake for home-manager
 │   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
+│   ├── theme.json                 the look: theme names, fonts, wallpaper (read by Nix and Ansible)
 │   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
@@ -78,6 +87,7 @@ config/
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
         ├── packages/              apps, tools and fonts
+        ├── boot/                  kernel command line of every boot entry (zswap off)
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
@@ -92,8 +102,9 @@ config/
 | `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
 | `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, Inter, JetBrains Mono Nerd Font | Installed with pacman |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
-| `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | Colloid dark, 24 px, Inter 10 | The login screen's look |
-| `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
+| `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
+| `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
+| `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
 | `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
 | `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
 
@@ -108,7 +119,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
 - **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
 - **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
-- **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, inside first boot's 30-minute window. Later runs take seconds.
+- **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, which first boot waits for (it has no time limit). Later runs take seconds.
 - **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
 - **Plasma in two steps.** [plasma-manager](https://github.com/nix-community/plasma-manager) writes the settings files during the switch (fonts, window buttons, menu bars). The colour scheme, icons, cursor, wallpaper and panels need a running Plasma, so its autostart entry applies them at the next login. With `overrideConfig = true` the repo always wins: changes made in System Settings are reset on the next apply.
 - **No dconf.** home-manager's dconf writes need a D-Bus session during the switch, which first boot doesn't have; on Plasma, GTK 4 apps get the dark preference from KDE's portal instead.
@@ -139,6 +150,8 @@ The `theme` role installs Colloid dark into `/usr/share`, so the login screen, w
 | Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
 | GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
 
+Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in one place, `config/home/theme.json`: the login screen (`login_screen` role) and the desktop and GTK apps (`plasma.nix`, `gtk.nix`) all read it, so they can't drift apart. It lives in `config/home` because the Nix flake can only read files inside its own directory.
+
 Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply.
 
 The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
@@ -156,10 +169,10 @@ The config may rely on the base: a role that themes the login screen checks that
 
 The first run happens before the login screen starts, and every run is as root. Tasks must:
 
-- **Not restart or start `plasmalogin`/`display-manager`**, including from handlers. At first boot the login screen waits for this run, so it would deadlock until the 30-minute timeout. Write the config file; the display manager reads it on start. Use `systemctl restart --no-block` if something must be triggered.
+- **Not restart or start `plasmalogin`/`display-manager`**, including from handlers. At first boot the login screen waits for this run, so first boot would hang for good (it has no time limit). Write the config file; the display manager reads it on start. Use `systemctl restart --no-block` if something must be triggered.
 - **Not reboot.** The hook reboots once after a successful run. A reboot mid-run skips the done marker, so the hook would run again.
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
-- **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` warns otherwise.
+- **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` fails otherwise.
 - **Put user-level settings in `config/home`** (home-manager), not in Ansible. For the rare user-level Ansible task, use `become: true` and `become_user: "{{ user_name }}"`.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
@@ -183,5 +196,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
 | `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
-| First boot shows console output for a long time, then the login screen | The first run failed or timed out. Check `journalctl -u llangvilla-firstboot.service -b`, fix, then run `apply.sh` (or reboot to retry) |
+| `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |
+| `Another apply.sh is already running` | Another run (the first-boot hook, or another terminal) holds the lock in `/run/llangvilla-apply.lock`. Wait for it, or check with `pgrep -af apply.sh` |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

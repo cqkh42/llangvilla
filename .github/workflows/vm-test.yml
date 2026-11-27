@@ -3,9 +3,8 @@ name: VM install test
 # Full end-to-end test of the working tree: build the ISO, install Arch into a
 # QEMU VM from a test stick, check the base system, then apply config/ and check
 # again (vm/test-vm.sh all).
-# Takes about 20 minutes. Run it on demand from the Actions tab.
-# Manual only for now; the weekly schedule comes back once it passes reliably
-# (cqkh42/llangvilla#11).
+# Takes about 20 minutes. Runs weekly, because Arch is a rolling release and can
+# break the installer without any commit here, and on demand from the Actions tab.
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +12,11 @@ on:
         description: "Also run the real first-boot hook (clones the default branch from GitHub)"
         type: boolean
         default: false
+  schedule:
+    - cron: "23 3 * * 1"   # Mondays 03:23 UTC
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

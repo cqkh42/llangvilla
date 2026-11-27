@@ -12,6 +12,7 @@
 #
 # Every run does a full `pacman -Syu` first, unless --no-upgrade: on Arch, installing
 # packages against a stale database is a partial upgrade (config/README.md).
+# Afterwards it says if a reboot, a re-login or service restarts are needed.
 #
 # Must not reboot or restart the display manager: at first boot it runs before the
 # login screen (config/README.md, "Writing tasks").
@@ -38,6 +39,55 @@ done
 
 [[ $EUID -eq 0 ]] || die "Run as root (sudo $0)."
 
+# One run at a time (first boot and a manual run must not overlap). The lock is on
+# fd 9, which the re-run after `git pull` inherits, so it only takes the lock once.
+if [[ ${LLANGVILLA_APPLY_LOCKED:-} != 1 ]]; then
+  exec 9>/run/llangvilla-apply.lock
+  flock -n 9 || die "Another apply.sh is already running."
+  export LLANGVILLA_APPLY_LOCKED=1
+
+  # Everything from here on also goes to a log file (the re-run inherits it). Keeps
+  # the newest 20.
+  log_dir=/var/log/llangvilla
+  mkdir -p "$log_dir"
+  log="$log_dir/apply-$(date +%Y%m%d-%H%M%S).log"
+  : > "$log"   # exists before the cleanup below counts the files
+  exec > >(exec 9>&-; tee -a "$log") 2>&1   # tee must not hold the lock
+  say "Logging to $log"
+  # shellcheck disable=SC2012  # our own fixed-pattern filenames
+  ls -1t "$log_dir"/apply-*.log | tail -n +21 | xargs -r rm -f
+fi
+
+# After an upgrade, say what still runs old code. Never reboots or restarts anything
+# itself (see "Writing tasks" in config/README.md).
+report_restarts() {
+  local maps pid cg unit own_cg session=0
+  local -A units=()
+  if [[ ! -d /usr/lib/modules/$(uname -r) ]]; then
+    say "Reboot needed: the running kernel ($(uname -r)) was upgraded and its modules are gone."
+    return 0   # a reboot covers everything below
+  fi
+  own_cg=$(cat /proc/self/cgroup 2>/dev/null || true)
+  for maps in /proc/[0-9]*/maps; do
+    pid=${maps#/proc/}; pid=${pid%/maps}
+    # A file under /usr shown as "(deleted)" was replaced by the upgrade.
+    grep -qE ' /usr/[^ ]+ \(deleted\)$' "$maps" 2>/dev/null || continue
+    cg=$(cat "/proc/$pid/cgroup" 2>/dev/null) || continue
+    [[ $cg == "$own_cg" ]] && continue   # this run's own shell
+    case $cg in
+      */user.slice/*) session=1 ;;
+      */system.slice/*.service*) unit=${cg#*/system.slice/}; units[${unit%%/*}]=1 ;;
+    esac
+  done
+  if (( session )); then
+    say "Log out and in: a desktop or login session still uses replaced libraries."
+  fi
+  if (( ${#units[@]} )); then
+    say "Services still using replaced libraries: ${!units[*]}"
+    say "  Restart them with 'systemctl restart UNIT', or reboot (simplest)."
+  fi
+}
+
 # 1. Update the checkout, then re-run the (possibly new) copy of this script.
 if (( pull )); then
   if git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
@@ -53,7 +103,15 @@ fi
 
 # 2. Bring the system up to date, so the playbook installs against a current package
 # database. Then the tools the config needs: the installer only guarantees git and a base.
+# A run killed mid-transaction (power cut) leaves pacman's lock behind, and every
+# later run would fail on it. Safe to remove when no pacman is running; this run
+# holds the apply lock, so no other apply.sh is about to start one.
+if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
+  say "Removing a stale pacman lock (no pacman is running)."
+  rm -f /var/lib/pacman/db.lck
+fi
 if (( upgrade )); then
+  trap report_restarts EXIT   # also after a failed playbook: the upgrade happened
   say "Upgrading the system (pacman -Syu)..."
   pacman -Syu --noconfirm || die "System upgrade failed. Fix it, or use --no-upgrade to apply without one."
 fi
