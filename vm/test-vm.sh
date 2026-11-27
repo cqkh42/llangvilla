@@ -501,6 +501,7 @@ do_config() {
   local from_firstboot=${1:-0} out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" sys_state
   vm_up
   wait_firstboot
+  clear_desktop_test
 
   if (( from_firstboot )); then
     apply="/opt/llangvilla/config/apply.sh --no-pull"
@@ -666,13 +667,22 @@ PY
   ok "Everything the config sets is in place"
 }
 
+# check_desktop's test autologin and notice. A run that stopped part-way through it
+# leaves them on the disk, which `config` reuses: clear them before checking anything.
+desktop_test_dropin=/etc/plasmalogin.conf.d/99-vm-test-autologin.conf
+desktop_test_notice=/etc/motd.d/llangvilla-vmtest
+clear_desktop_test() {
+  vm_sudo rm -f "$desktop_test_dropin" "$desktop_test_notice" \
+    || die "Could not remove an earlier run's test autologin ($desktop_test_dropin) and notice."
+}
+
 # Log in through a test-only autologin (never part of config/), check what Plasma
 # applies at login, then re-apply ($1: the config phase's apply command) with the
 # session running: Plasma's GTK sync may
 # have replaced home-manager's GTK files, and that must not fail the switch.
 check_desktop() {
   local apply=$1 scheme gtk_files=(.gtkrc-2.0 .config/gtk-3.0/settings.ini .config/gtk-4.0/settings.ini) f replaced=()
-  local dropin=/etc/plasmalogin.conf.d/99-vm-test-autologin.conf
+  local dropin=$desktop_test_dropin
   scheme=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["colorScheme"])' "$repo/config/home/theme.json")
 
   step "Logging in (test-only autologin) to check the desktop"
@@ -689,7 +699,7 @@ printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
 # A notice, for notices.nix to show at login. /etc/motd.d only exists once a check
 # has written one (they mkdir it themselves), so make it here too.
 mkdir -p /etc/motd.d
-printf 'VM test notice: shown at desktop login.\n' > /etc/motd.d/llangvilla-vmtest
+printf 'VM test notice: shown at desktop login.\n' > $desktop_test_notice
 SH
   vm_reboot
   ssh "${S[@]}" "$vm_user@127.0.0.1" \
@@ -746,7 +756,7 @@ SH
   done
   ok "Re-applied cleanly; the GTK files are home-manager's again"
 
-  vm_sudo rm -f "$dropin" /etc/motd.d/llangvilla-vmtest || warn "Could not remove the test autologin ($dropin) and notice."
+  clear_desktop_test
 }
 
 do_boot() {
