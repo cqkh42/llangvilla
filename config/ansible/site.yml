@@ -31,5 +31,7 @@
       tags: [user_avatar]
     - role: nix
       tags: [nix]
+    - role: housekeeping   # after nix: its cleanup service uses it
+      tags: [housekeeping]
     - role: home_manager   # last: the user layer builds on everything above
       tags: [home_manager]

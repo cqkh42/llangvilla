@@ -1,0 +1,4 @@
+---
+# Old home-manager generations are deleted after this long (nix-env's age format):
+# the user layer can be rolled back this far.
+housekeeping_nix_keep: 30d
