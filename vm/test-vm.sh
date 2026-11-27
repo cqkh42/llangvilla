@@ -156,10 +156,16 @@ qemu_base() {
   if (( show )); then Q+=(-display "${VM_DISPLAY:-default}"); else Q+=(-display none); fi
 }
 
+# One shared connection for all of the test's commands (ControlMaster): faster, and
+# the config's firewall rate-limits SSH (6 new connections in 30 s per address).
+# Keepalives notice a dead connection after a reboot; ssh_close ends it on purpose.
 ssh_opts() {
   S=(-i "$key" -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-     -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR)
+     -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR
+     -o ControlMaster=auto -o "ControlPath=$state/ssh-%C" -o ControlPersist=60
+     -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
 }
+ssh_close() { ssh "${S[@]}" -O exit "${vm_user:-x}@127.0.0.1" 2>/dev/null || true; }
 
 # Values the test env sets, read in a subshell so they cannot clobber ours.
 # shellcheck source=/dev/null
@@ -217,7 +223,7 @@ wait_ssh() {
   until ssh "${S[@]}" "$vm_user@127.0.0.1" true 2>/dev/null; do
     (( SECONDS < deadline )) || return 1
     kill -0 "$qemu_pid" 2>/dev/null || die "The VM exited before SSH came up ($what)."
-    sleep 5
+    sleep 10   # every 5 s would trip the firewall's SSH rate limit (6 in 30 s)
   done
 }
 
@@ -269,6 +275,7 @@ vm_up() {
 vm_down() {
   step "Powering the VM off"
   vm_sudo systemctl poweroff 2>/dev/null || true
+  ssh_close
   for _ in $(seq 1 60); do kill -0 "$qemu_pid" 2>/dev/null || break; sleep 2; done
   kill "$qemu_pid" 2>/dev/null || true
   trap - EXIT
@@ -277,6 +284,7 @@ vm_down() {
 vm_reboot() {
   info "Rebooting the VM..."
   vm_sudo systemctl reboot 2>/dev/null || true
+  ssh_close
   sleep 30
   wait_ssh $(( SECONDS + 10 * 60 )) "after the reboot" || die "SSH did not come back after the reboot."
 }
@@ -297,6 +305,7 @@ wait_firstboot() {
   ok "First-boot hook finished"
   if [[ $(env_value FIRSTBOOT_REBOOT_AFTER 1) == 1 ]]; then
     info "Waiting for its automatic reboot..."
+    ssh_close
     sleep 30
     wait_ssh $(( SECONDS + 10 * 60 )) "after the first-boot reboot" || die "SSH did not come back after the reboot."
   fi
@@ -505,6 +514,14 @@ do_config() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qw zswap.enabled=0 /proc/cmdline \
     || die "zswap.enabled=0 is not on the kernel command line after the reboot (boot role)."
   ok "zswap is off (kernel command line)"
+  out=$(vm_sudo ufw status verbose 2>&1) || { printf '%s\n' "$out" >&2; die "ufw status failed."; }
+  if ! { grep -q '^Status: active' <<<"$out" &&
+         grep -q '^Default: deny (incoming), allow (outgoing)' <<<"$out" &&
+         grep -Eq '^22/tcp +LIMIT IN' <<<"$out"; }; then
+    printf '%s\n' "$out" >&2
+    die "The firewall is not as the firewall role sets it (ufw status above)."
+  fi
+  ok "Firewall: incoming blocked, SSH rate-limited (and still reachable)"
   vm_screenshot login-after-config
 
   vm_down

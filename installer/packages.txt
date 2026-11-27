@@ -17,7 +17,7 @@
 plasma-desktop plasma-login-manager konsole dolphin
 breeze breeze-gtk kde-gtk-config qqc2-breeze-style plasma-integration xdg-desktop-portal-kde
 systemsettings kinfocenter kmenuedit kde-cli-tools kscreen powerdevil polkit-kde-agent
-plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt plasma-firewall plasma-vault print-manager
+plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt plasma-vault print-manager
 kwallet-pam ksshaskpass kwrited drkonqi
 kdeplasma-addons milou spectacle discover plasma-systemmonitor ksystemstats plasma-browser-integration
 plasma-workspace-wallpapers ocean-sound-theme

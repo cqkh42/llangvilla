@@ -88,6 +88,7 @@ config/
     └── roles/
         ├── packages/              apps, tools and fonts
         ├── boot/                  kernel command line of every boot entry (zswap off)
+        ├── firewall/              ufw: incoming blocked, outgoing allowed, SSH rate-limited
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
@@ -100,6 +101,7 @@ config/
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
 | `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
+| `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
 | `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, Inter, JetBrains Mono Nerd Font | Installed with pacman |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
@@ -174,6 +176,7 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
 - **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` fails otherwise.
 - **Put user-level settings in `config/home`** (home-manager), not in Ansible. For the rare user-level Ansible task, use `become: true` and `become_user: "{{ user_name }}"`.
+- **Open a port in the role that adds the service**, with `community.general.ufw`. The firewall role blocks everything else incoming.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
 
@@ -198,4 +201,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |
 | `Another apply.sh is already running` | Another run (the first-boot hook, or another terminal) holds the lock in `/run/llangvilla-apply.lock`. Wait for it, or check with `pgrep -af apply.sh` |
+| SSH times out for a while after many quick connections | The firewall's rate limit (6 new connections in 30 s from one address). Wait half a minute, and reuse connections in scripts: `ControlMaster`/`ControlPersist` in `~/.ssh/config` |
+| A service on the machine isn't reachable from the network | The firewall blocks incoming traffic. Open its port in the role that adds the service (`community.general.ufw`), not by hand |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

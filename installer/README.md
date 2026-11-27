@@ -395,7 +395,7 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 
 - `.gitignore` excludes `autoinstall.env`, `*.iso` and `*.qcow2`. A password hash can be cracked offline, so never commit one.
 - SSH is key-only once a key is installed. Without one, password login stays on and the log warns.
-- Arch has no firewall by default.
+- Arch has no firewall by default; the config adds one (ufw: incoming blocked, SSH rate-limited; [config](../config/README.md)).
 - The VM tests use a throwaway password and key, kept in `~/.cache/llangvilla/vm/`.
 
 ## Limitations
