@@ -59,7 +59,7 @@ Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the n
 |---|---|---|
 | First boot | `llangvilla-firstboot.service` (once, before the login screen) | `/opt/llangvilla`, cloned by the hook |
 | Later updates | You: `sudo /opt/llangvilla/config/apply.sh` | `/opt/llangvilla` |
-| VM test | `vm/test-vm.sh config` (with `--no-pull`) | `~/llangvilla-worktree` in the VM |
+| VM test | the first-boot hook, then `vm/test-vm.sh` (with `--no-pull`) | `/opt/llangvilla`, cloned from a snapshot of the working tree; `vm/test-vm.sh config` uses `~/llangvilla-worktree` |
 
 A machine installed before `config/` existed has no `/opt/llangvilla`. Create it once, as root:
 
