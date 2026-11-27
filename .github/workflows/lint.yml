@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install ShellCheck (pinned; Dependabot bumps it)
         run: pip install --user "$(grep '^shellcheck-py==' .github/lint/requirements.txt)"
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install linters (pinned; Dependabot bumps them)
         run: pip install --user -r .github/lint/requirements.txt
@@ -64,10 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@v32
 
       # The Nix store (nixpkgs source, the home configuration's closure), keyed on
       # the lock: a new cache only when an input changes. Runs after Nix is installed.
