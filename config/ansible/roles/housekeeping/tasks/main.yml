@@ -1,0 +1,100 @@
+---
+# Keeps a long-lived Arch box tidy: the package cache, the Nix store, and a check for
+# firmware updates. Weekly timers only; nothing here runs during the apply, so it is
+# safe at first boot. fstrim and systemd-boot updates are enabled by the installer.
+- name: Install the cache cleaner (pacman-contrib) and the firmware updater (fwupd)
+  community.general.pacman:
+    name: [pacman-contrib, fwupd]
+    state: present
+
+# Looked up here: a later getent (login_screen's) replaces the earlier results.
+- name: Look up the login user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ user_name }}"
+
+- name: Note the login user's home directory
+  ansible.builtin.set_fact:
+    housekeeping_home: "{{ ansible_facts.getent_passwd[user_name][4] }}"
+
+# ---- the package cache: paccache's own timer keeps the last 3 versions of each
+- name: Clean the package cache weekly (last 3 versions kept)
+  ansible.builtin.systemd_service:
+    name: paccache.timer
+    enabled: true
+    state: started
+
+# ---- the Nix store and the user's home-manager generations
+- name: Install the Nix cleanup service
+  ansible.builtin.template:
+    src: llangvilla-nix-cleanup.service.j2
+    dest: /etc/systemd/system/llangvilla-nix-cleanup.service
+    owner: root
+    group: root
+    mode: "0644"
+
+# ---- firmware: check only, with a notice in the login message
+- name: Create the directory for llangvilla's scripts
+  ansible.builtin.file:
+    path: /usr/local/lib/llangvilla
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the firmware check
+  ansible.builtin.template:
+    src: llangvilla-firmware-check.sh.j2
+    dest: /usr/local/lib/llangvilla/firmware-check.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the firmware check service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/llangvilla-firmware-check.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Written by config/ansible (housekeeping role). Edit the role, not this file.
+      [Unit]
+      Description=Check for firmware updates (fwupd) and note them in the login message
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/lib/llangvilla/firmware-check.sh
+
+- name: Install the weekly timers
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Written by config/ansible (housekeeping role). Edit the role, not this file.
+      [Unit]
+      Description={{ item.description }}
+
+      [Timer]
+      OnCalendar=weekly
+      Persistent=true
+      RandomizedDelaySec=1h
+
+      [Install]
+      WantedBy=timers.target
+  loop:
+    - {name: llangvilla-nix-cleanup, description: "Weekly Nix cleanup"}
+    - {name: llangvilla-firmware-check, description: "Weekly check for firmware updates"}
+  loop_control:
+    label: "{{ item.name }}.timer"
+
+- name: Turn on the weekly timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: [llangvilla-nix-cleanup, llangvilla-firmware-check]

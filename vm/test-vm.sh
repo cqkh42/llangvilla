@@ -491,6 +491,19 @@ do_config() {
     ok "Second run changed nothing"
   fi
 
+  step "Checking the housekeeping timers and services"
+  vm_sudo systemctl is-enabled --quiet paccache.timer llangvilla-nix-cleanup.timer llangvilla-firmware-check.timer \
+    || die "A housekeeping timer is not enabled (paccache, llangvilla-nix-cleanup, llangvilla-firmware-check)."
+  vm_sudo systemctl start llangvilla-nix-cleanup.service \
+    || { vm_sudo journalctl -u llangvilla-nix-cleanup.service -b --no-pager -o cat >&2 || true; die "The Nix cleanup failed (journal above)."; }
+  ok "Nix cleanup ran"
+  # The VM has no updatable firmware, so the check must say so (it never fails its unit).
+  vm_sudo systemctl start llangvilla-firmware-check.service || die "The firmware check service failed."
+  out=$(vm_sudo journalctl -u llangvilla-firmware-check.service -b --no-pager -o cat 2>&1 || true)
+  grep -q '^No firmware updates\.$' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; die "The firmware check didn't run cleanly (journal above)."; }
+  ok "Firmware check ran (no updates, as expected in a VM)"
+
   step "Rebooting to check the result comes up"
   vm_reboot
   sys_state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)

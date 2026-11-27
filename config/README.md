@@ -92,6 +92,7 @@ config/
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
         ├── nix/                   Nix from pacman, daemon socket, flakes
+        ├── housekeeping/          weekly: package cache, Nix cleanup, firmware update check
         └── home_manager/          runs home-manager switch as the user (last role)
 ```
 
@@ -105,6 +106,7 @@ config/
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
+| `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
 | `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
 | `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
 
@@ -155,6 +157,18 @@ Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in o
 Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply.
 
 The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
+
+## Housekeeping
+
+Weekly timers from the `housekeeping` role; nothing runs during an apply.
+
+| Timer | Does |
+|---|---|
+| `paccache.timer` | Keeps the last 3 versions of each package in `/var/cache/pacman/pkg/` (enough to downgrade from) |
+| `llangvilla-nix-cleanup.timer` | Deletes home-manager generations older than `housekeeping_nix_keep`, then runs `nix-collect-garbage` |
+| `llangvilla-firmware-check.timer` | Checks LVFS for firmware updates (`fwupd`). If there are any, the login message says so; install them with `sudo fwupdmgr update`, then reboot. It never installs anything itself |
+
+Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; its output is in `journalctl -u llangvilla-firmware-check.service`.
 
 ## What goes in the config
 
