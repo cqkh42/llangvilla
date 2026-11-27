@@ -9,7 +9,7 @@ What looking after the machine and the repo involves, and where the details are.
 | Apply the config | After pushing a change, and every week or two for updates (a notice says so after 14 days) | `sudo /opt/llangvilla/config/apply.sh`: pulls, shows the Arch news since the last upgrade, upgrades the whole system (snapshot first), applies. If a news post asks for a manual step, stop it (Ctrl+C in the 20 s pause) and do that first | [config: Usage](../config/README.md#usage) |
 | Reboot, log out, or restart a service | When `apply.sh` says so at the end | `Reboot needed` (kernel upgraded): reboot soon, before plugging in new hardware. `Log out and in`: when convenient. `Services still using replaced libraries`: `sudo systemctl restart UNIT`, or reboot | [config: Usage](../config/README.md#usage) |
 | Install firmware updates | When a notice says firmware updates are available (checked weekly) | `fwupdmgr get-updates` to see them, `sudo fwupdmgr update`, then reboot | [config: Housekeeping](../config/README.md#housekeeping) |
-| Act on a disk notice | When a notice reports disk problems (checked weekly) | **Back up first** ([#20](https://github.com/cqkh42/llangvilla/issues/20)). SMART failing: replace the disk, then [recover](#if-the-disk-dies). btrfs errors: `sudo btrfs device stats /` and `sudo btrfs scrub status /`; errors that keep growing mean the disk is going | [config: Housekeeping](../config/README.md#housekeeping) |
+| Act on a disk notice | When a notice reports disk problems (checked weekly) | **Back up first** ([#20](https://github.com/cqkh42/llangvilla/issues/20)). SMART failing: replace the disk, then [reinstall](#reinstalling). btrfs errors: `sudo btrfs device stats /` and `sudo btrfs scrub status /`; errors that keep growing mean the disk is going | [config: Housekeeping](../config/README.md#housekeeping) |
 | Undo a bad upgrade | When something broke after an `apply.sh` | Roll back soon: every run takes a new snapshot and only the newest 3 are kept | [config: Snapshots](../config/README.md#snapshots) |
 | Look at a failed first boot | `First-boot configuration FAILED` on the console or at SSH login | The newest log in `/var/log/llangvilla/`, fix, reboot to retry | [installer: Troubleshooting](../installer/README.md#after-the-install) |
 
@@ -45,19 +45,12 @@ Dependabot is configured in `.github/dependabot.yml`, the merging in `.github/wo
 | Check the stick still works | `vm/test-vm.sh install --stick /dev/sdX`, then `vm/test-vm.sh boot` | [vm: Workflows](../vm/README.md#workflows) |
 | Delete merged branches | Automatic once *Automatically delete head branches* is on (Settings → General; [#39](https://github.com/cqkh42/llangvilla/issues/39)). Until then, on the Branches page | — |
 
-## Before a reinstall
+## Reinstalling
 
-1. **Back up `/home` by hand.** There are no automatic backups yet ([#20](https://github.com/cqkh42/llangvilla/issues/20)), and the installer wipes the disk.
-2. Check the stick's `autoinstall.env`: `installer/install.sh --check "$V/arch-autoinstall/autoinstall.env"` ([installer: Configure](../installer/README.md#3-configure)).
-3. Boot the stick; the machine installs itself, powers off, and configures itself on first boot ([installer: Installing](../installer/README.md#installing)).
-4. Restore `/home`, then run `sudo /opt/llangvilla/config/apply.sh` so home-manager takes its own files back.
-
-## If the disk dies
-
-Or the machine is lost, or a reinstall is the quickest fix. Everything but `/home` comes back from the repo; `/home` comes back only from a backup ([#20](https://github.com/cqkh42/llangvilla/issues/20): none are automatic yet).
+Planned, after a dead disk, or because a reinstall is the quickest fix. Everything but `/home` comes back from the repo; `/home` comes back only from a backup ([#20](https://github.com/cqkh42/llangvilla/issues/20): none are automatic yet, so **before a planned reinstall, back up `/home` by hand**: the installer wipes the disk).
 
 1. **Replace the disk** if it failed. The new one can be any size from 40 GB; `TARGET_DISK=auto` picks the largest internal disk, or pin the new one by ID ([installer: Configure](../installer/README.md#3-configure)).
-2. **Get a stick.** If the old one is gone or out of date, from any Linux machine with Docker: clone the repo, run `installer/build-usb.sh /dev/sdX`, and fill in `autoinstall.env` again (Wi-Fi, `openssl passwd -6` for the password hash). Nothing else is needed from the old machine.
+2. **Get a stick.** Re-run `installer/build-usb.sh /dev/sdX` on the old one to refresh it, then check its settings: `installer/install.sh --check "$V/arch-autoinstall/autoinstall.env"`. If it's gone, any Linux machine with Docker can build a new one; fill in `autoinstall.env` again (Wi-Fi, `openssl passwd -6` for the password hash). Nothing else is needed from the old machine.
 3. **Install**: boot the stick ([installer: Installing](../installer/README.md#installing)). About 20 minutes, then it powers off. First boot applies the config before the login screen (with a fresh Nix download, a while longer) and reboots once.
 4. **Restore `/home`** from the backup, if there is one, as the user, without the cache (`~/.cache`).
 5. **Re-apply**: `sudo /opt/llangvilla/config/apply.sh`, so home-manager takes its own files back after the restore.

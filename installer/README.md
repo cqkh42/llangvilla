@@ -99,15 +99,7 @@ Run `lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN=="usb"'` with the stick 
 eval "$(installer/build-usb.sh /dev/sdX)"
 ```
 
-`build-usb.sh` then:
-
-1. Refuses anything that is not a whole USB disk.
-2. Installs Ventoy if it is not already on the stick, after asking you to type the disk path. A stick that already has Ventoy is kept; `--force` reinstalls it.
-3. Mounts the data partition and sets `$V` to its mount point.
-4. Copies the ISO (if changed) and `packages.txt` (always). Writes `ventoy/ventoy.json` and the `autoinstall.env` template only if they are missing.
-5. Runs `install.sh --check` on the stick's `autoinstall.env`.
-
-Re-running it on a prepared stick is safe and refreshes only the ISO and `packages.txt`.
+It refuses anything that isn't a whole USB disk, and asks you to type the disk path before installing Ventoy. A stick that already has Ventoy is kept (`--force` reinstalls it), so re-running it on a prepared stick is safe: it refreshes the ISO (if changed) and `packages.txt`, writes `ventoy/ventoy.json` and the `autoinstall.env` template only if they are missing, and finishes with `install.sh --check` on the stick's `autoinstall.env`. `$V` is the stick's mount point.
 
 `build-usb.sh` usage:
 
@@ -169,6 +161,8 @@ udisksctl unmount -b "$(findmnt -no SOURCE "$V")"
    - **Disk with data:** the installer waits for `YES`; anything else aborts without erasing.
 6. On `INSTALL COMPLETE` the machine powers off. Remove the stick.
 7. Power on. The first boot runs the [first-boot hook](#first-boot-hook) (a few minutes of console output) and reboots once. The second boot reaches the login screen (Plasma Login Manager).
+
+What a good install looks like is what `vm/test-vm.sh check` checks ([vm: Base system](../vm/README.md#base-system-check)).
 
 If Ventoy hangs after selecting the ISO, reboot and use Ventoy's GRUB2 mode (`F1` in the Ventoy menu shows the keys).
 
@@ -260,23 +254,6 @@ This is the only interface between the installer and the config. When `CONFIG_RE
 The unit runs before the login screen (`Before=display-manager.service plasmalogin.service`), with its output on the console and no time limit: stopping a run mid-upgrade could break the system. SSH and the text consoles (`Ctrl+Alt+F2`) work meanwhile. If it fails, the login screen starts anyway, with a notice on the console and in SSH logins, and the hook runs again on the next boot.
 
 The unit only runs while `/var/lib/llangvilla/firstboot.done` is absent, and that marker is written only on success. With `FIRSTBOOT_REBOOT_AFTER=1` the machine reboots once after success. The marker is written first, so the reboot cannot loop.
-
-## Verifying an install
-
-`vm/test-vm.sh check` runs the equivalent checks in the VM. On the machine:
-
-```bash
-systemctl --failed                                  # empty
-nmcli device status                                 # connected
-lsblk -f                                            # vfat ESP + btrfs root
-sudo btrfs subvolume list /                         # @ @home @log @pkg @.snapshots
-bootctl status                                      # systemd-boot installed
-hostnamectl                                         # expected hostname
-getent passwd jack                                  # full name in field 5
-sudo sshd -T | grep -i passwordauthentication       # no
-swapon --show                                       # zram0
-journalctl -u llangvilla-firstboot.service -b       # first-boot hook output
-```
 
 ## Maintenance
 

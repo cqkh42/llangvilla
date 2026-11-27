@@ -608,6 +608,12 @@ SH
     ok "Second run changed nothing"
   fi
 
+  step "A dry run: changes nothing, and still builds the user layer"
+  out=$(ssh_limit=1200 vm_sudo "$apply --dry-run" 2>&1) || { printf '%s\n' "$out" >&2; die "apply.sh --dry-run failed."; }
+  grep -q 'Build the user layer without switching' <<<"$out" || { printf '%s\n' "$out" >&2; die "The dry run didn't build the user layer."; }
+  if grep -Eq 'changed=[1-9]' <<<"$out"; then printf '%s\n' "$out" >&2; die "The dry run reports changes right after a clean run."; fi
+  ok "Dry run: no changes, user layer built"
+
   # Two real snapshots (one per run) plus three fakes: the two oldest fakes must be gone.
   vm_root_sh <<'SH' || die "Snapshots before upgrades are wrong (above)."
 snaps=(/.snapshots/before-upgrade-*)
@@ -619,6 +625,17 @@ for s in "${snaps[@]}"; do
 done
 SH
   ok "Snapshots before upgrades: the newest 3 kept, read-only"
+
+  # packages_remove (empty in the repo): install a small package by hand, then apply
+  # only the packages role with it in the list. It must be gone afterwards.
+  step "Removing a package with packages_remove"
+  ssh_limit=600 vm_sudo pacman -S --needed --noconfirm cowsay >/dev/null || die "Could not install the test package (cowsay)."
+  out=$(ssh_limit=900 vm_sudo "$apply --no-upgrade -- --tags packages -e '{\"packages_remove\": [\"cowsay\"]}'" 2>&1) \
+    || { printf '%s\n' "$out" >&2; die "apply.sh with packages_remove failed."; }
+  if ssh "${S[@]}" "$vm_user@127.0.0.1" pacman -Q cowsay >/dev/null 2>&1; then
+    printf '%s\n' "$out" >&2; die "packages_remove left cowsay installed."
+  fi
+  ok "packages_remove removed the package"
 
   step "Checking the housekeeping timers and services"
   local timer timers=""
@@ -780,6 +797,8 @@ timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E '
 test -f /usr/share/wayland-sessions/plasma.desktop
 mkdir -p ${dropin%/*}
 printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
+# A notice, for notices.nix to show at login.
+printf 'VM test notice: shown at desktop login.\n' > /etc/motd.d/llangvilla-vmtest
 SH
   vm_reboot
   ssh "${S[@]}" "$vm_user@127.0.0.1" \
@@ -794,6 +813,12 @@ SH
   ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qx 'ColorScheme=$scheme' .config/kdeglobals" \
     || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
   ok "Colour scheme $scheme applied at login"
+
+  # notices.nix logs each notice its notification service accepted.
+  out=$(vm_sudo journalctl -b -t llangvilla-notices --no-pager -o cat 2>&1 || true)
+  grep -qx 'shown llangvilla-vmtest' <<<"$out" \
+    || { printf '%s\n' "${out:-nothing logged}" >&2; die "The test notice was not shown at login (notices.nix; journal above)."; }
+  ok "The pending notice was shown as a desktop notification (screenshot: desktop-after-login)"
 
   for f in "${gtk_files[@]}"; do
     ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || replaced+=("$f")
@@ -812,7 +837,7 @@ SH
   done
   ok "Re-applied cleanly; the GTK files are home-manager's again"
 
-  vm_sudo rm -f "$dropin" || warn "Could not remove the test autologin ($dropin)."
+  vm_sudo rm -f "$dropin" /etc/motd.d/llangvilla-vmtest || warn "Could not remove the test autologin ($dropin) and notice."
 }
 
 do_boot() {

@@ -6,7 +6,7 @@
 # switch on a second clash: edit dotfiles in the repo, not on the machine (#18).
 # The first run fetches nixpkgs and downloads from cache.nixos.org: minutes, not
 # seconds. Changed only when the switch produced a new generation.
-# A dry run (apply.sh -- --check) skips the switch below, so build the configuration
+# A dry run (apply.sh --dry-run, i.e. --check) skips the switch below, so build the configuration
 # instead: that catches a broken user layer without changing anything in $HOME.
 - name: Build the user layer without switching (dry runs only)
   ansible.builtin.command:

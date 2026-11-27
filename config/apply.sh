@@ -6,9 +6,10 @@
 # Usage (as root):
 #   sudo /opt/llangvilla/config/apply.sh             pull, upgrade the system, then apply
 #   sudo config/apply.sh --no-pull                   apply the files as they are
-#   sudo config/apply.sh --no-upgrade -- --check --diff
-#                                                    dry run; extra args go to ansible-playbook
-#   sudo config/apply.sh -- --tags user_avatar       run one role (each role has its own tag)
+#   sudo config/apply.sh --dry-run                   show what would change, change nothing
+#                                                    (no upgrade; the playbook with --check --diff)
+#   sudo config/apply.sh -- --tags user_avatar       run one role (each role has its own tag);
+#                                                    args after -- go to ansible-playbook
 #
 # Every run does a full `pacman -Syu` first, unless --no-upgrade: on Arch, installing
 # packages against a stale database is a partial upgrade (config/README.md).
@@ -27,11 +28,12 @@ say()  { printf '\033[1;36m[apply]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[apply] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "${BASH_SOURCE[0]}"; }
 
-pull=1 upgrade=1 playbook_args=()
+pull=1 upgrade=1 dry_run=0 playbook_args=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --no-pull) pull=0 ;;
     --no-upgrade) upgrade=0 ;;
+    --dry-run) dry_run=1 upgrade=0 ;;
     --) shift; playbook_args=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "Unknown argument: $1" ;;
@@ -98,6 +100,7 @@ if (( pull )); then
       || die "git pull failed (local changes or a diverged branch in $repo?). Use --no-pull to apply as is."
     rerun=(--no-pull)
     (( upgrade )) || rerun+=(--no-upgrade)
+    (( dry_run )) && rerun+=(--dry-run)
     exec bash "$here/apply.sh" "${rerun[@]}" -- "${playbook_args[@]}"
   fi
   say "$repo is not a git checkout, applying it as it is."
@@ -174,7 +177,7 @@ PY
 # A run killed mid-transaction (power cut) leaves pacman's lock behind, and every
 # later run would fail on it. Safe to remove when no pacman is running; this run
 # holds the apply lock, so no other apply.sh is about to start one.
-if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
+if (( ! dry_run )) && [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
   say "Removing a stale pacman lock (no pacman is running)."
   rm -f /var/lib/pacman/db.lck
 fi
@@ -186,6 +189,7 @@ if (( upgrade )); then
   pacman -Syu --noconfirm || die "System upgrade failed. Fix it, or use --no-upgrade to apply without one."
 fi
 if ! command -v ansible-playbook >/dev/null; then
+  (( ! dry_run )) || die "ansible isn't installed, so there is nothing to dry-run yet: apply once for real."
   say "Installing ansible..."
   if (( upgrade )); then
     pacman -S --needed --noconfirm ansible || die "Could not install ansible."
@@ -199,11 +203,14 @@ fi
 say "Running the Ansible playbook..."
 export ANSIBLE_CONFIG="$here/ansible/ansible.cfg"
 cd "$here/ansible"
+# A dry run: ansible's check mode, with a diff of every file a task would change. The
+# home_manager role builds the user layer instead of switching to it.
+if (( dry_run )); then playbook_args=(--check --diff "${playbook_args[@]}"); fi
 ansible-playbook site.yml "${playbook_args[@]}"
 
 # A successful run with an upgrade: the Arch news and the daily reminder (housekeeping
-# role) count from here. Not for dry runs (-- --check), which change nothing.
-if (( upgrade )) && [[ " ${playbook_args[*]} " != *" --check "* && " ${playbook_args[*]} " != *" -C "* ]]; then
+# role) count from here. A dry run never upgrades, so it never gets here.
+if (( upgrade )); then
   mkdir -p "${upgrade_stamp%/*}"
   touch "$upgrade_stamp"
   rm -f /etc/motd.d/llangvilla-apply

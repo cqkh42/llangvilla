@@ -6,24 +6,17 @@ It is an Ansible playbook behind a single entrypoint, `apply.sh`. Ansible owns t
 
 ## Quick start
 
-On the machine:
-
 ```bash
-sudo /opt/llangvilla/config/apply.sh                                 # pull, upgrade, apply
-sudo /opt/llangvilla/config/apply.sh --no-upgrade -- --check --diff  # dry run
+sudo /opt/llangvilla/config/apply.sh             # pull, upgrade, apply
+sudo /opt/llangvilla/config/apply.sh --dry-run   # what would change
 ```
 
-Before pushing a change, from a checkout:
-
-```bash
-make lint-yaml lint-ansible lint-nix                    # the checks CI runs on config/
-make vm-config                                          # apply the working tree to the test VM
-```
+To change the config, see [Making a change](#making-a-change).
 
 ## Usage
 
 ```
-apply.sh [--no-pull] [--no-upgrade] [-- ANSIBLE-PLAYBOOK-ARGS...]
+apply.sh [--no-pull] [--no-upgrade | --dry-run] [-- ANSIBLE-PLAYBOOK-ARGS...]
 ```
 
 Run as root. `apply.sh` does the following:
@@ -45,8 +38,9 @@ Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the n
 | Option | Effect |
 |---|---|
 | `--no-pull` | Apply the files as they are. Used by the VM test and for local edits |
-| `--no-upgrade` | Skip the system upgrade. Use it for dry runs; a real run should upgrade |
-| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --check --diff`, `-- --tags user_avatar`, `-- -v`. Each role has a tag of its own name |
+| `--no-upgrade` | Skip the system upgrade. A real run should upgrade |
+| `--dry-run` | Show what would change and change nothing: no upgrade, no snapshot, the playbook in check mode with `--diff`. The user layer is built, not switched to. Needs a machine that has been applied once (ansible installed) |
+| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --tags user_avatar`, `-- -v`, `-- --diff`. Each role has a tag of its own name |
 | `-h`, `--help` | Show usage |
 
 | Exit status | Meaning |
@@ -74,7 +68,7 @@ git clone https://github.com/cqkh42/llangvilla.git /opt/llangvilla
 ```
 config/
 ├── apply.sh                       entrypoint
-├── assets/                        wallpaper source (SVG) and a 3840×2160 render
+├── assets/                        the wallpaper (SVG source, 3840×2160 render) and the avatar
 ├── home/                          the user layer: a Nix flake for home-manager
 │   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
@@ -112,6 +106,7 @@ config/
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
+| `user_avatar_src` | `roles/user_avatar/defaults/main.yml` | `assets/avatar.png` | The login user's picture, on the login screen and in Plasma |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
 | `housekeeping_apply_max_days` | `roles/housekeeping/defaults/main.yml` | `14` | The apply reminder writes a notice once the last successful upgrade by `apply.sh` is older than this |
 | `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
@@ -123,7 +118,7 @@ config/
 `config/home/` is a Nix flake for [home-manager](https://github.com/nix-community/home-manager), which owns everything in the user's home. The `home_manager` role applies it as the user:
 
 ```bash
-nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#jack
+nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#<user>   # user from host.json
 ```
 
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
@@ -149,7 +144,7 @@ What goes where:
 | pacman (Ansible) | GUI apps, themes, fonts, anything that plugs into Plasma or Qt | Nix GUI apps need nixGL on Arch; Nix Qt plugins can't load into Arch's Qt; system users (the login screen) can't see the Nix profile |
 | Nix (home-manager) | Dotfiles, settings, command-line tools | Declarative, pinned, roll back with `home-manager generations` |
 
-To add something, add a module under `modules/` and import it from `home.nix`. Check it with `make lint-nix` (flake check, nixfmt, build; CI runs the same), format it with `make fmt-nix`, then `make vm-config`.
+To add something, add a module under `modules/`, import it from `home.nix`, then follow [Making a change](#making-a-change) (`make fmt-nix` formats it).
 
 ## Themes
 
@@ -264,9 +259,9 @@ There is one machine, so a retiring task only has to stay until it has applied o
 ## Making a change
 
 1. Edit the role, or add one and list it in `site.yml`.
-2. Lint: `make lint-yaml lint-ansible` (and `make lint-nix` for `config/home`), as CI does.
-3. Test against the working tree: `vm/test-vm.sh config`, then `vm/test-vm.sh boot` to look at it ([vm](../vm/README.md)).
-4. Commit and push, then run `sudo /opt/llangvilla/config/apply.sh` on the machine.
+2. Lint: `make lint-yaml lint-ansible`, and `make lint-nix` for `config/home` ([the make targets](../README.md#development)).
+3. Test against the working tree: `make vm-config` on an existing test VM, then `vm/test-vm.sh boot` to look at it ([vm](../vm/README.md)). The PR runs the full VM test.
+4. Merge, then run `sudo /opt/llangvilla/config/apply.sh` on the machine (`--dry-run` first to see what it will do).
 
 ## Troubleshooting
 
