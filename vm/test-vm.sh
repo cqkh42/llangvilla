@@ -698,6 +698,14 @@ SH
     || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
   ok "Colour scheme $scheme applied at login"
 
+  # plasma-manager records each login script that succeeded; the panels (top bar and
+  # dock) and the wallpaper are desktop scripts, which fail silently without qdbus.
+  for f in desktop_script_panels desktop_script_wallpaper_picture; do
+    ssh "${S[@]}" "$vm_user@127.0.0.1" test -f ".local/share/plasma-manager/last_run_$f" \
+      || die "plasma-manager's $f did not succeed at login (panels or wallpaper not applied; qdbus missing?)."
+  done
+  ok "Panels and wallpaper applied at login (plasma-manager's desktop scripts)"
+
   # notices.nix logs each notice its notification service accepted.
   out=$(vm_sudo journalctl -b -t llangvilla-notices --no-pager -o cat 2>&1 || true)
   grep -qx 'shown llangvilla-vmtest' <<<"$out" \
