@@ -33,8 +33,8 @@ exec 3>&1 1>&2
 # To upgrade: bump the version and paste the new linux.tar.gz hash from
 # https://github.com/ventoy/Ventoy/releases. The weekly upstream check
 # (.github/workflows/upstream-check.yml) opens an issue with both, hash checked.
-VENTOY_VERSION="1.1.16"
-VENTOY_SHA256="a9ffd7bd5e26df486cafff924b8dbcb6caae20cbe2b179a009fe59ae740c7572"
+VENTOY_VERSION="1.1.18"
+VENTOY_SHA256="d86ff9de63d94c8b8f1f6b14d23c55af4b88e8207bf2893890892a6a97b1ad54"
 VENTOY_TARBALL="ventoy-${VENTOY_VERSION}-linux.tar.gz"
 VENTOY_URL="https://github.com/ventoy/Ventoy/releases/download/v${VENTOY_VERSION}/${VENTOY_TARBALL}"
 
