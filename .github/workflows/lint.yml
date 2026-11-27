@@ -19,8 +19,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install ShellCheck (pinned; Dependabot bumps it)
+        run: pip install --user "$(grep '^shellcheck-py==' .github/lint/requirements.txt)"
+
       - name: ShellCheck
-        run: shellcheck installer/*.sh config/*.sh vm/*.sh
+        run: ~/.local/bin/shellcheck installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh   # the pinned one, not the runner's
 
       - name: Env template parses as bash
         run: bash -n installer/autoinstall.env.example
@@ -42,8 +45,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install linters
-        run: pip install --user ansible ansible-lint yamllint
+      - name: Install linters (pinned; Dependabot bumps them)
+        run: pip install --user -r .github/lint/requirements.txt
 
       - name: yamllint
         run: yamllint .

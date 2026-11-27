@@ -1,0 +1,34 @@
+# Weekly dependency bumps, one grouped PR per ecosystem.
+# GitHub Actions and the linters merge themselves once lint passes; a Nix bump gets
+# the VM test started on its branch and waits for a person
+# (.github/workflows/dependabot-automerge.yml). Colloid and Ventoy aren't covered by
+# Dependabot: .github/workflows/upstream-check.yml opens an issue for those.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /.github/lint
+    schedule:
+      interval: weekly
+      day: sunday
+    groups:
+      linters:
+        patterns: ["*"]
+
+  # nixpkgs, home-manager and plasma-manager in config/home/flake.lock.
+  - package-ecosystem: nix
+    directory: /config/home
+    schedule:
+      interval: weekly
+      day: sunday
+    groups:
+      flake-inputs:
+        patterns: ["*"]

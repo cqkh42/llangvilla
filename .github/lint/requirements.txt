@@ -1,0 +1,6 @@
+# The linters CI runs (lint.yml), pinned so CI only changes in a PR. Dependabot
+# bumps them weekly; those PRs merge themselves once lint passes (dependabot.yml).
+ansible==15.0.0
+ansible-lint==26.11.1
+yamllint==1.38.0
+shellcheck-py==0.11.0.1
