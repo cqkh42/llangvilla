@@ -46,6 +46,7 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 - **Window buttons** on the left. Colloid's decorations already draw them as red, yellow and green circles, so no recolouring.
 - **KRunner** on Meta+Space acts as a Spotlight-style launcher.
 - **Login screen**: Plasma Login Manager, one user, no autologin: it opens on that user with the password field ready.
+- **Login splash**: none; Plasma goes straight from the password to the desktop (`plasma.nix`).
 - **Boot**: systemd-boot, no boot theme for now.
 
 ## Menus: no menu bars

@@ -60,6 +60,7 @@ for app in dolphinrc katerc arkrc; do
   check "menu bar off ($app)"            grep -qx 'MenuBar=Disabled' "$HOME/.config/$app"
 done
 check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' "$HOME/.config/konsolerc"
+check "no login splash (ksplashrc)"     grep -qx 'Engine=none' "$HOME/.config/ksplashrc"
 check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
 check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
 check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
