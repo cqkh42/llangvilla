@@ -7,6 +7,7 @@
     ./modules/apps.nix
     ./modules/git.nix
     ./modules/shell.nix
+    ./modules/notices.nix
   ];
 
   home.username = username;

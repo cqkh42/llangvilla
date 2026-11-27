@@ -12,8 +12,9 @@
 #
 # Every run does a full `pacman -Syu` first, unless --no-upgrade: on Arch, installing
 # packages against a stale database is a partial upgrade (config/README.md).
-# Before it, a snapshot of / (the newest 3 are kept). Afterwards it says if a
-# reboot, a re-login or service restarts are needed.
+# Before it, the Arch news posted since the last upgrade (some need a manual step) and
+# a snapshot of / (the newest 3 are kept). Afterwards it says if a reboot, a re-login
+# or service restarts are needed, and records the upgrade for the daily reminder.
 #
 # Must not reboot or restart the display manager: at first boot it runs before the
 # login screen (config/README.md, "Writing tasks").
@@ -132,6 +133,44 @@ snapshot_root() {
   fi
 }
 
+# The Arch news posted since the last successful upgrade by this script. Some posts
+# announce a manual step that `pacman -Syu --noconfirm` can't take; at a terminal,
+# the run pauses so you can stop it. Skipped on first boot (no record yet) and when
+# python3 is missing; a failed fetch only warns.
+upgrade_stamp=/var/lib/llangvilla/last-upgrade
+arch_news() {
+  local rc=0
+  [[ -e $upgrade_stamp ]] && command -v python3 >/dev/null || return 0
+  python3 - "$(stat -c %Y "$upgrade_stamp")" <<'PY' || rc=$?
+import sys, urllib.request, xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+since = int(sys.argv[1])
+try:
+    with urllib.request.urlopen("https://archlinux.org/feeds/news/", timeout=15) as r:
+        root = ET.parse(r).getroot()
+    new = [(parsedate_to_datetime(i.findtext("pubDate")), i.findtext("title"), i.findtext("link"))
+           for i in root.iter("item")]
+except Exception as e:  # offline, or the feed changed shape
+    print(f"  ({e})")
+    sys.exit(2)
+new = [n for n in new if n[0].timestamp() > since]
+if not new:
+    sys.exit(0)
+print("\033[1;33m[apply] Arch news since the last upgrade:\033[0m")
+for when, title, link in sorted(new):
+    print(f"  {when:%Y-%m-%d}  {title}\n              {link}")
+sys.exit(10)
+PY
+  case $rc in
+    0) say "No Arch news since the last upgrade." ;;
+    10) if [[ -t 0 ]]; then
+          say "Read the news above first: a post may need a manual step. Upgrading in 20 s (Ctrl+C stops)."
+          sleep 20
+        fi ;;
+    *) say "Could not read the Arch news (offline?). Carrying on." ;;
+  esac
+}
+
 # A run killed mid-transaction (power cut) leaves pacman's lock behind, and every
 # later run would fail on it. Safe to remove when no pacman is running; this run
 # holds the apply lock, so no other apply.sh is about to start one.
@@ -141,6 +180,7 @@ if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
 fi
 if (( upgrade )); then
   trap report_restarts EXIT   # also after a failed playbook: the upgrade happened
+  arch_news
   snapshot_root
   say "Upgrading the system (pacman -Syu)..."
   pacman -Syu --noconfirm || die "System upgrade failed. Fix it, or use --no-upgrade to apply without one."
@@ -160,4 +200,12 @@ say "Running the Ansible playbook..."
 export ANSIBLE_CONFIG="$here/ansible/ansible.cfg"
 cd "$here/ansible"
 ansible-playbook site.yml "${playbook_args[@]}"
+
+# A successful run with an upgrade: the Arch news and the daily reminder (housekeeping
+# role) count from here. Not for dry runs (-- --check), which change nothing.
+if (( upgrade )) && [[ " ${playbook_args[*]} " != *" --check "* && " ${playbook_args[*]} " != *" -C "* ]]; then
+  mkdir -p "${upgrade_stamp%/*}"
+  touch "$upgrade_stamp"
+  rm -f /etc/motd.d/llangvilla-apply
+fi
 say "Done."

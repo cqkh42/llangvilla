@@ -621,8 +621,10 @@ SH
   ok "Snapshots before upgrades: the newest 3 kept, read-only"
 
   step "Checking the housekeeping timers and services"
-  vm_sudo systemctl is-enabled --quiet paccache.timer llangvilla-nix-cleanup.timer llangvilla-firmware-check.timer \
-    || die "A housekeeping timer is not enabled (paccache, llangvilla-nix-cleanup, llangvilla-firmware-check)."
+  local timer timers=""
+  for timer in paccache btrfs-scrub@- llangvilla-nix-cleanup llangvilla-firmware-check \
+               llangvilla-disk-check llangvilla-apply-reminder; do timers+="$timer.timer "; done
+  vm_sudo systemctl is-enabled --quiet "$timers" || die "A housekeeping timer is not enabled (one of: $timers)."
   ssh_limit=900 vm_sudo systemctl start llangvilla-nix-cleanup.service \
     || { vm_sudo journalctl -u llangvilla-nix-cleanup.service -b --no-pager -o cat >&2 || true; die "The Nix cleanup failed (journal above)."; }
   ok "Nix cleanup ran"
@@ -632,6 +634,18 @@ SH
   grep -q '^No firmware updates\.$' <<<"$out" \
     || { printf '%s\n' "$out" >&2; die "The firmware check didn't run cleanly (journal above)."; }
   ok "Firmware check ran (no updates, as expected in a VM)"
+  # The VM's virtio disk has no SMART and a fresh btrfs has no errors.
+  ssh_limit=600 vm_sudo systemctl start llangvilla-disk-check.service || die "The disk check service failed."
+  out=$(vm_sudo journalctl -u llangvilla-disk-check.service -b --no-pager -o cat 2>&1 || true)
+  grep -q '^No disk problems found\.$' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; die "The disk check didn't run cleanly (journal above)."; }
+  ok "Disk check ran (no problems)"
+  # apply.sh has just upgraded, so the reminder must count 0 days and leave no notice.
+  vm_sudo systemctl start llangvilla-apply-reminder.service || die "The apply reminder service failed."
+  out=$(vm_sudo journalctl -u llangvilla-apply-reminder.service -b --no-pager -o cat 2>&1 || true)
+  grep -q '^Last apply: 0 days ago' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; die "The apply reminder didn't see the last upgrade (journal above)."; }
+  ok "Apply reminder ran (last upgrade: today)"
 
   step "Rebooting to check the result comes up"
   vm_reboot
@@ -738,6 +752,8 @@ check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' 
 check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
 check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
 check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
+check "notices at desktop login"         grep -q '^Exec=/nix/store/.*llangvilla-notices' "$HOME/.config/autostart/llangvilla-notices.desktop"
+check "no llangvilla notices pending"    bash -c '! ls /etc/motd.d/llangvilla-* 2>/dev/null'
 exit $fails
 CHECKS
   (( fails == 0 )) || die "The config didn't produce everything it should (see above)."

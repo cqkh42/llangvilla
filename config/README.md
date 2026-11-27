@@ -29,13 +29,14 @@ apply.sh [--no-pull] [--no-upgrade] [-- ANSIBLE-PLAYBOOK-ARGS...]
 Run as root. `apply.sh` does the following:
 
 1. Unless `--no-pull`: if its directory is in a git checkout, runs `git pull --ff-only` and re-runs the updated `apply.sh`.
-2. Unless `--no-upgrade`: upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
+2. Unless `--no-upgrade`: prints the [Arch news](https://archlinux.org/news/) posted since the last upgrade (some posts announce a manual step; at a terminal it waits 20 s so you can stop), takes a [snapshot](#snapshots), then upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
 3. Installs `ansible` with pacman if `ansible-playbook` is missing.
 4. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
 5. After an upgrade, even a failed run, says what still runs old code. It never acts on it itself:
    - **Reboot needed**: the running kernel was upgraded, so its modules are gone (plugging in new hardware can fail until you reboot).
    - **Log out and in**: a desktop or login session still uses replaced libraries (Qt, KDE, Mesa and so on).
    - **Services still using replaced libraries**: restart them with `systemctl restart`, or reboot.
+6. After a successful run with an upgrade, records it in `/var/lib/llangvilla/last-upgrade`: the next run's news start from there, and the daily [apply reminder](#housekeeping) counts from it.
 
 Only one run at a time: a second `apply.sh` while one is running exits with `Another apply.sh is already running`.
 
@@ -79,7 +80,7 @@ config/
 │   ├── home.nix                   settings every user gets
 │   ├── theme.json                 the look: theme names, fonts, wallpaper (read by Nix and Ansible)
 │   ├── host.json                  the machine: login user, keyboard layout, mirror countries (likewise)
-│   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix
+│   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix, notices.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
@@ -94,7 +95,7 @@ config/
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
         ├── nix/                   Nix from pacman, daemon socket, flakes
-        ├── housekeeping/          weekly: package cache, Nix cleanup, firmware update check
+        ├── housekeeping/          timers: package cache, Nix cleanup, btrfs scrub; firmware, disk and apply checks
         └── home_manager/          runs home-manager switch as the user (last role)
 ```
 
@@ -111,6 +112,7 @@ config/
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
+| `housekeeping_apply_max_days` | `roles/housekeeping/defaults/main.yml` | `14` | The apply reminder writes a notice once the last successful upgrade by `apply.sh` is older than this |
 | `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
 | `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply |
 | `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes |
@@ -137,6 +139,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 | `gtk.nix` | GTK 3/4 theme, icons, cursor and font to match |
 | `apps.nix` | Menu bars off in Dolphin, Kate, Ark and Konsole (☰ menus; Ctrl+M brings one back) |
 | `git.nix`, `shell.nix` | Git behaviour (no identity yet) and bash |
+| `notices.nix` | Shows the config's notices (`/etc/motd.d/llangvilla-*`) as desktop notifications at login ([Housekeeping](#housekeeping)) |
 
 What goes where:
 
@@ -206,15 +209,20 @@ Once everything works, delete the broken system: mount the top level as above, `
 
 ## Housekeeping
 
-Weekly timers from the `housekeeping` role; nothing runs during an apply.
+Timers from the `housekeeping` role; nothing runs during an apply.
 
-| Timer | Does |
-|---|---|
-| `paccache.timer` | Keeps the last 3 versions of each package in `/var/cache/pacman/pkg/` (enough to downgrade from) |
-| `llangvilla-nix-cleanup.timer` | Deletes home-manager generations older than `housekeeping_nix_keep`, then runs `nix-collect-garbage` |
-| `llangvilla-firmware-check.timer` | Checks LVFS for firmware updates (`fwupd`). If there are any, the login message says so; install them with `sudo fwupdmgr update`, then reboot. It never installs anything itself |
+| Timer | When | Does |
+|---|---|---|
+| `paccache.timer` | Weekly | Keeps the last 3 versions of each package in `/var/cache/pacman/pkg/` (enough to downgrade from) |
+| `llangvilla-nix-cleanup.timer` | Weekly | Deletes home-manager generations older than `housekeeping_nix_keep`, then runs `nix-collect-garbage` |
+| `btrfs-scrub@-.timer` | Monthly | btrfs-progs' own scrub of `/`: reads every block and checks its checksum |
+| `llangvilla-firmware-check.timer` | Weekly | Checks LVFS for firmware updates (`fwupd`). Install them with `sudo fwupdmgr update`, then reboot. It never installs anything itself |
+| `llangvilla-disk-check.timer` | Weekly | SMART health of every disk `smartctl` can see, btrfs's error counters on `/`, and the last scrub's result |
+| `llangvilla-apply-reminder.timer` | Daily | Whether the last successful upgrade by `apply.sh` is older than `housekeeping_apply_max_days` (14) |
 
-Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; its output is in `journalctl -u llangvilla-firmware-check.service`.
+The checks never fail their unit. When they find something, they write a **notice**: a file in `/etc/motd.d/llangvilla-*`, which the login message shows over SSH and on the text console. At each desktop login, `config/home/modules/notices.nix` shows every notice as a notification that stays until dismissed (so does the installer's first-boot failure notice). A clean check removes its notice.
+
+Run one now with e.g. `sudo systemctl start llangvilla-disk-check.service`; its output is in `journalctl -u llangvilla-disk-check.service`. The checks are scripts in `roles/housekeeping/files/`, listed in `housekeeping_checks`; add one there to add a check.
 
 ## What goes in the config
 
