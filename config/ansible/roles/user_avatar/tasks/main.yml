@@ -18,7 +18,7 @@
 
 - name: Install the avatar as the user's AccountsService icon
   ansible.builtin.copy:
-    src: avatar.png
+    src: "{{ user_avatar_src }}"
     dest: "/var/lib/AccountsService/icons/{{ user_name }}"
     owner: root
     group: root
