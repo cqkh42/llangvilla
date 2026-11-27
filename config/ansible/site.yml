@@ -17,6 +17,8 @@
   roles:
     - role: packages
       tags: [packages]
+    - role: mirrors
+      tags: [mirrors]
     - role: boot
       tags: [boot]
     - role: theme

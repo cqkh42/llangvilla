@@ -1,0 +1,28 @@
+---
+# Keeps pacman's mirror list fresh: reflector.timer rewrites
+# /etc/pacman.d/mirrorlist weekly from the mirrors below. Nothing runs during the
+# apply itself; the list from install time is used until the first weekly run.
+- name: Install reflector
+  community.general.pacman:
+    name: reflector
+    state: present
+
+- name: Choose the mirrors reflector writes
+  ansible.builtin.copy:
+    dest: /etc/xdg/reflector/reflector.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Written by config/ansible (mirrors role). Edit the role, not this file.
+      --save /etc/pacman.d/mirrorlist
+      --protocol https
+      --country {{ mirrors_countries | join(',') }}
+      --latest {{ mirrors_latest }}
+      --sort rate
+
+- name: Refresh the mirror list weekly
+  ansible.builtin.systemd_service:
+    name: reflector.timer
+    enabled: true
+    state: started

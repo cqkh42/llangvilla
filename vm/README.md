@@ -91,7 +91,7 @@ It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/s
 ### Config (`config`)
 
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
-2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, or if no log appears in `/var/log/llangvilla/`.
+2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, if no log appears in `/var/log/llangvilla/`, or if `reflector.timer`, `base-devel`, `man-db` or `man-pages` are missing.
 3. Runs it again and fails if any task reports a change.
 4. Reboots and checks that systemd reports `running`, the display manager is active and `zswap.enabled=0` is on the kernel command line, then saves a screenshot of the login screen.
 

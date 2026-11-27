@@ -474,6 +474,10 @@ do_config() {
   step "Applying the config (config/apply.sh --no-pull)"
   vm_sudo "$apply" || die "config/apply.sh failed (output above)."
   ok "Config applied"
+  # shellcheck disable=SC2016  # $ expands on the VM
+  ssh "${S[@]}" "$vm_user@127.0.0.1" 'systemctl is-enabled --quiet reflector.timer && pacman -Q base-devel man-db man-pages >/dev/null' \
+    || die "The mirrors or packages role is incomplete (reflector.timer, base-devel, man-db, man-pages)."
+  ok "Mirror refresh scheduled; build tools and man pages installed"
 
   ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
     || die "home-manager produced no generation for $vm_user."
