@@ -157,3 +157,9 @@ Entries 1–19 come from the holistic review of November 2026; 20–26 from its 
 **Decision:** `apply.sh --dry-run` runs the playbook in check mode with `--diff`, with no upgrade and no snapshot; the user layer is built, not switched to. It replaces `--no-upgrade -- --check --diff`, and `apply.sh` no longer looks inside ansible's arguments. The VM test runs it after a clean apply and expects no changes.
 
 **Why:** spotting a dry run by matching `--check` in the arguments missed combined flags like `-CD`, and a dry run that skipped the user layer said nothing about it. One option is easier to remember than three flags.
+
+## 27. A `qdbus` for plasma-manager
+
+**Decision:** the `home_manager` role installs `qt6-tools` and links `/usr/local/bin/qdbus` to Qt 6's `qdbus`. The VM test checks it is on the PATH and that plasma-manager's panel and wallpaper scripts succeeded at login.
+
+**Why:** plasma-manager is written for NixOS, where `qdbus` is on the PATH; on Arch it is `qdbus6`. Its desktop scripts (panels, wallpaper) failed at every login without a trace, so the first look at the VM showed Plasma's default panel and wallpaper, while the settings written to files (colours, fonts, buttons) were in place and the test passed. A link is smaller than pulling Nix's Qt tools into the user layer, and system-wide it is on the session's PATH however Plasma starts.

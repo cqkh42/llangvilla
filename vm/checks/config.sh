@@ -50,7 +50,8 @@ check "zswap off in every boot entry"    s bash -c 'for f in /boot/loader/entrie
 # nix
 check "Nix daemon socket active"         systemctl is-active nix-daemon.socket
 check "Nix flakes enabled"               grep -qx 'experimental-features = nix-command flakes' /etc/nix/nix.conf
-# home_manager (written during the switch; colours, icons and panels come at login)
+# home_manager (written during the switch; colours, icons, panels and wallpaper come at login)
+check "qdbus on the PATH (plasma-manager)" command -v qdbus
 check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
 check "keyboard layout $KEYBOARD (kxkbrc)" grep -qx "LayoutList=$KEYBOARD" "$HOME/.config/kxkbrc"
 check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"

@@ -8,6 +8,22 @@
 # seconds. Changed only when the switch produced a new generation.
 # A dry run (apply.sh --dry-run, i.e. --check) skips the switch below, so build the configuration
 # instead: that catches a broken user layer without changing anything in $HOME.
+# plasma-manager sets the panels and the wallpaper at login with Plasma desktop
+# scripts, run through a bare `qdbus` (modules/startup.nix). On NixOS that is on the
+# PATH; Arch's qt6-tools only has qdbus6, so without this the scripts fail and the
+# desktop keeps Plasma's default panel and wallpaper. /usr/local/bin is on the
+# session's PATH (systemd's user manager and /etc/profile).
+- name: Install qdbus for plasma-manager's login scripts
+  community.general.pacman:
+    name: qt6-tools
+    state: present
+
+- name: Put qdbus on the PATH under the name plasma-manager calls
+  ansible.builtin.file:
+    src: /usr/lib/qt6/bin/qdbus
+    dest: /usr/local/bin/qdbus
+    state: link
+
 - name: Build the user layer without switching (dry runs only)
   ansible.builtin.command:
     cmd: nix build "path:{{ home_manager_flake_dir }}#homeConfigurations.{{ user_name }}.activationPackage" --no-link
