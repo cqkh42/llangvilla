@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 150
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Free disk space
         run: >-
@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload installer logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-logs
           path: ~/.cache/llangvilla/vm/logs/
