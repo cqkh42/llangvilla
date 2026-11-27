@@ -315,22 +315,9 @@ journalctl -u llangvilla-firstboot.service -b       # first-boot hook output
 
 ## Optional extras
 
-### Snapper snapshots
+### Snapshots
 
-`snapper` and `snap-pac` are in `packages.txt`. To enable them with the `@.snapshots` layout:
-
-```bash
-sudo umount /.snapshots
-sudo rm -r /.snapshots
-sudo snapper -c root create-config /
-sudo btrfs subvolume delete /.snapshots
-sudo mkdir /.snapshots
-sudo mount -a
-sudo chmod 750 /.snapshots
-sudo systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
-```
-
-`snap-pac` then snapshots before and after every pacman transaction. The installer removes `subvolid=` from fstab, so a rolled-back subvolume still mounts. `/boot` is not snapshotted: after a rollback, reinstall the kernels, and keep `linux-lts` as a fallback.
+The installer creates the `@.snapshots` subvolume, mounted at `/.snapshots`. The config fills it: `apply.sh` snapshots `/` before every upgrade ([config: Snapshots](../config/README.md#snapshots), which also has the rollback steps). The installer removes `subvolid=` from fstab so that a rolled-back `@` still mounts.
 
 ### Nvidia graphics
 
@@ -395,7 +382,7 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 
 - `.gitignore` excludes `autoinstall.env`, `*.iso` and `*.qcow2`. A password hash can be cracked offline, so never commit one.
 - SSH is key-only once a key is installed. Without one, password login stays on and the log warns.
-- Arch has no firewall by default.
+- Arch has no firewall by default; the config adds one (ufw: incoming blocked, SSH rate-limited; [config](../config/README.md)).
 - The VM tests use a throwaway password and key, kept in `~/.cache/llangvilla/vm/`.
 
 ## Limitations
@@ -403,4 +390,4 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 - No disk encryption, Secure Boot signing or dual boot.
 - The first-boot hook clones over HTTPS without credentials, so the repository must be public.
 - One `autoinstall.env` means one hostname. Change `HOST_NAME` per machine.
-- If anything assumes ext4, set `ROOT_FS=ext4`. Snapper then doesn't apply.
+- If anything assumes ext4, set `ROOT_FS=ext4`. There are then no snapshots before upgrades.

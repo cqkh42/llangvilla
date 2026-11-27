@@ -59,7 +59,7 @@ Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the n
 |---|---|---|
 | First boot | `llangvilla-firstboot.service` (once, before the login screen) | `/opt/llangvilla`, cloned by the hook |
 | Later updates | You: `sudo /opt/llangvilla/config/apply.sh` | `/opt/llangvilla` |
-| VM test | `vm/test-vm.sh config` (with `--no-pull`) | `~/llangvilla-worktree` in the VM |
+| VM test | the first-boot hook, then `vm/test-vm.sh` (with `--no-pull`) | `/opt/llangvilla`, cloned from a snapshot of the working tree; `vm/test-vm.sh config` uses `~/llangvilla-worktree` |
 
 A machine installed before `config/` existed has no `/opt/llangvilla`. Create it once, as root:
 
@@ -87,7 +87,9 @@ config/
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
         ├── packages/              apps, tools and fonts
+        ├── mirrors/               reflector: UK HTTPS mirrors, refreshed weekly
         ├── boot/                  kernel command line of every boot entry (zswap off)
+        ├── firewall/              ufw: incoming blocked, outgoing allowed, SSH rate-limited
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
@@ -101,7 +103,9 @@ config/
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
 | `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
-| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
+| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, man-db, man-pages, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `[GB]`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
@@ -120,7 +124,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
 - **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
-- **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
+- **Existing files are backed up once.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`). A later clash on the same file replaces that backup instead of failing the switch (`HOME_MANAGER_BACKUP_OVERWRITE`), so edit dotfiles in the repo, not on the machine. The three GTK files are overwritten without any backup, since Plasma's GTK sync may rewrite them (`gtk.nix`).
 - **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, which first boot waits for (it has no time limit). Later runs take seconds.
 - **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
 - **Plasma in two steps.** [plasma-manager](https://github.com/nix-community/plasma-manager) writes the settings files during the switch (fonts, window buttons, menu bars). The colour scheme, icons, cursor, wallpaper and panels need a running Plasma, so its autostart entry applies them at the next login. With `overrideConfig = true` the repo always wins: changes made in System Settings are reset on the next apply.
@@ -158,6 +162,47 @@ Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role ch
 
 The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
 
+## Snapshots
+
+Before every upgrade, including first boot's, `apply.sh` takes a read-only btrfs snapshot of `/` as `/.snapshots/before-upgrade-<date>-<time>` and keeps the newest 3. They are the undo for a bad Arch upgrade: re-applying the config, or reinstalling, would install the same broken packages again.
+
+- **Covered:** `/` (the system, `/etc`, `/usr`, `/var` apart from the next item).
+- **Not covered:** `/home`, `/var/log` and `/var/cache/pacman/pkg` (separate subvolumes), and `/boot` (FAT, see the kernel step below). Nor a `pacman -Syu` you run by hand, or a run with `--no-upgrade`: upgrade with `apply.sh`.
+- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (`ROOT_FS=ext4`).
+- **If an upgrade broke something, roll back soon.** Each `apply.sh` run takes a new snapshot and drops the oldest, so after three more runs the good one is gone.
+
+List them with `sudo ls /.snapshots/`. To see what changed, compare a directory, e.g. `sudo diff -rq /.snapshots/before-upgrade-<…>/etc /etc`.
+
+### Undo one file or one package
+
+```bash
+sudo cp -a /.snapshots/before-upgrade-<…>/etc/some.conf /etc/some.conf      # a file
+sudo pacman -U /var/cache/pacman/pkg/<name>-<old version>-*.pkg.tar.zst     # a package (the cache keeps old versions)
+```
+
+### Roll the whole system back
+
+From the running system (or the live stick, mounting the root partition instead):
+
+```bash
+sudo mount -o subvolid=5 "$(findmnt -nvo SOURCE /)" /mnt            # the btrfs top level
+sudo mv /mnt/@ /mnt/@broken                                         # keep the broken system for now
+sudo btrfs subvolume snapshot /mnt/@.snapshots/before-upgrade-<…> /mnt/@   # a writable copy becomes /
+sudo umount /mnt
+sudo reboot
+```
+
+The boot entry names the root subvolume (`rootflags=subvol=@`), so the new `@` is used from the next boot. Tools that switch btrfs's *default* subvolume, like `snapper rollback`, have no effect with this layout.
+
+**Then fix the kernel.** `/boot` isn't in the snapshot, so it still holds the newer kernel while `/usr/lib/modules` is back to the old one: hardware that needs a module not yet loaded may not work. Reinstall the snapshot's kernel versions from the package cache, then reboot again:
+
+```bash
+sudo pacman -S linux linux-lts
+sudo reboot
+```
+
+Once everything works, delete the broken system: mount the top level as above, `sudo btrfs subvolume delete /mnt/@broken`, unmount.
+
 ## Housekeeping
 
 Weekly timers from the `housekeeping` role; nothing runs during an apply.
@@ -174,7 +219,7 @@ Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; 
 
 | Goes in | Examples | Why |
 |---|---|---|
-| Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager, snapper | Needed to boot to a usable desktop; changes only on reinstall |
+| Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager | Needed to boot to a usable desktop; changes only on reinstall |
 | Config (this directory) | Apps, themes, settings, anything you expect to change | Applies to the running machine with `apply.sh` |
 
 The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as `user_name` belong in `host_vars`.
@@ -188,6 +233,7 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Not need a desktop session.** No user dconf, user systemd units, `loginctl`, or `kwriteconfig6` against a running session. Writing files under `/etc` or `/home/{{ user_name }}/.config` is fine.
 - **Be idempotent.** A second run must report `changed=0`; `vm/test-vm.sh config` fails otherwise.
 - **Put user-level settings in `config/home`** (home-manager), not in Ansible. For the rare user-level Ansible task, use `become: true` and `become_user: "{{ user_name }}"`.
+- **Open a port in the role that adds the service**, with `community.general.ufw`. The firewall role blocks everything else incoming.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
 
@@ -212,4 +258,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |
 | `Another apply.sh is already running` | Another run (the first-boot hook, or another terminal) holds the lock in `/run/llangvilla-apply.lock`. Wait for it, or check with `pgrep -af apply.sh` |
+| SSH times out for a while after many quick connections | The firewall's rate limit (6 new connections in 30 s from one address). Wait half a minute, and reuse connections in scripts: `ControlMaster`/`ControlPersist` in `~/.ssh/config` |
+| A service on the machine isn't reachable from the network | The firewall blocks incoming traffic. Open its port in the role that adds the service (`community.general.ufw`), not by hand |
 | A run hangs | A task restarts the display manager or waits for a desktop session (see [Writing tasks](#writing-tasks)) |

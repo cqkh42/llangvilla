@@ -17,9 +17,9 @@
 plasma-desktop plasma-login-manager konsole dolphin
 breeze breeze-gtk kde-gtk-config qqc2-breeze-style plasma-integration xdg-desktop-portal-kde
 systemsettings kinfocenter kmenuedit kde-cli-tools kscreen powerdevil polkit-kde-agent
-plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt plasma-firewall plasma-vault print-manager
+plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt
 kwallet-pam ksshaskpass kwrited drkonqi
-kdeplasma-addons milou spectacle discover plasma-systemmonitor ksystemstats plasma-browser-integration
+kdeplasma-addons milou spectacle plasma-systemmonitor ksystemstats plasma-browser-integration
 plasma-workspace-wallpapers ocean-sound-theme
 
 # --- audio: PipeWire
@@ -31,11 +31,9 @@ mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-dr
 # --- bluetooth
 bluez bluez-utils
 
-# --- btrfs snapshots (harmless on ext4)
-snapper snap-pac
-
-# --- tools
-base-devel git man-db nano reflector
+# --- tools. nano stays in the base: an editor for rescue work before the config
+# (and vim) has run. Build tools, man pages and reflector come from the config.
+git nano
 
 # --- media codecs
 gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg

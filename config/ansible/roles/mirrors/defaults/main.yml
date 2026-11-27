@@ -1,0 +1,5 @@
+---
+# Mirror countries for reflector (ISO codes). The machine is in the UK.
+mirrors_countries: [GB]
+# How many of the most recently synced HTTPS mirrors to keep.
+mirrors_latest: 10

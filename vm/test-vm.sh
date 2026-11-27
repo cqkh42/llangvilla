@@ -13,7 +13,8 @@
 #             powers off
 #   config    boots the installed disk headless, applies the working tree's config/
 #             (config/apply.sh --no-pull), applies it again and fails if anything changes,
-#             reboots, checks the login screen comes up, powers off. Repeatable on
+#             reboots, checks the login screen comes up, logs in (test-only
+#             autologin) to check the desktop, re-applies, powers off. Repeatable on
 #             the same install, so it is the quick loop for config changes
 #   boot      boots the installed disk in a window to look around (SSH on port 2222)
 #   ssh       SSH into a VM started with `boot` (extra args run as a command)
@@ -26,10 +27,10 @@
 #   --env FILE       base autoinstall.env (default: installer/autoinstall.env.example).
 #                    Any placeholders are filled with test values, then test overrides
 #                    are appended (blank disk, no countdown, test password and SSH key).
-#   --firstboot      keep CONFIG_REPO_URL, so the installed system runs the real
-#                    first-boot hook (clones from GitHub: the default branch, or
-#                    CONFIG_REPO_BRANCH from the env, NOT your working tree); `check`
-#                    waits for it. Off by default; `config` tests the working tree.
+#   --no-firstboot   install a plain base (CONFIG_REPO_URL=''). By default the
+#                    installed system runs the real first-boot hook against a
+#                    snapshot of the working tree, served to the VM over HTTP (clone,
+#                    config/apply.sh, reboot), and `check` waits for it
 #   --baked          use the install.sh baked into the ISO. By default the working
 #                    tree's install.sh goes on the test stick and replaces it, so
 #                    installer changes can be tested without rebuilding the ISO
@@ -41,7 +42,8 @@
 #   --timeout MIN    give up on the install after this long (default 90)
 #
 # Environment: OVMF_CODE / OVMF_VARS (firmware files, found automatically on Arch,
-# Debian/Ubuntu and Fedora), VM_SSH_PORT (2222), VM_MEMORY (4G), TEST_PASSWORD (test).
+# Debian/Ubuntu and Fedora), VM_SSH_PORT (2222), VM_GIT_PORT (8418, the working-tree
+# snapshot for the first-boot hook), VM_MEMORY (4G), TEST_PASSWORD (test).
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -58,6 +60,9 @@ ssh_port="${VM_SSH_PORT:-2222}"
 memory="${VM_MEMORY:-4G}"
 test_password="${TEST_PASSWORD:-test}"
 worktree_dir=llangvilla-worktree     # in the VM user's home, for `config`
+git_port="${VM_GIT_PORT:-8418}"
+git_srv="$state/worktree-git"        # the snapshot the first-boot hook clones
+git_url="http://10.0.2.2:${git_port}/llangvilla.git"   # 10.0.2.2: the host, from the VM
 
 # ---------- logging ----------
 if [[ -t 2 ]]; then
@@ -78,14 +83,15 @@ case "${1:-}" in
   all|install|check|config|boot|ssh|live|clean) cmd=$1; shift ;;
   -h|--help) usage; exit 0 ;;
 esac
-iso="${ISO:-}" base_env="$ai/autoinstall.env.example" keep_firstboot=0 baked=0 stick_dev=""
+iso="${ISO:-}" base_env="$ai/autoinstall.env.example" firstboot=1 baked=0 stick_dev=""
 gui="" disk_size=60 timeout_min=90 ssh_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --iso)       iso=$2; shift ;;
     --env)       base_env=$2; shift ;;
-    --firstboot) keep_firstboot=1 ;;
-    --ansible)   die "--ansible was replaced by --firstboot (hook from GitHub) and the 'config' command (working tree)" ;;
+    --no-firstboot) firstboot=0 ;;
+    --firstboot) die "--firstboot is now the default, and uses the working tree (not GitHub). Use --no-firstboot to skip the hook." ;;
+    --ansible)   die "--ansible was replaced by the first-boot hook (the default) and the 'config' command" ;;
     --baked)     baked=1 ;;
     --stick)     stick_dev=$2; shift ;;
     --gui)       gui=1 ;;
@@ -156,14 +162,62 @@ qemu_base() {
   if (( show )); then Q+=(-display "${VM_DISPLAY:-default}"); else Q+=(-display none); fi
 }
 
+# One shared connection for all of the test's commands (ControlMaster): faster, and
+# the config's firewall rate-limits SSH (6 new connections in 30 s per address).
+# Keepalives notice a dead connection after a reboot; ssh_close ends it on purpose.
 ssh_opts() {
   S=(-i "$key" -p "$ssh_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-     -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR)
+     -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR
+     -o ControlMaster=auto -o "ControlPath=$state/ssh-%C" -o ControlPersist=60
+     -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
 }
+ssh_close() { ssh "${S[@]}" -O exit "${vm_user:-x}@127.0.0.1" 2>/dev/null || true; }
 
 # Values the test env sets, read in a subshell so they cannot clobber ours.
 # shellcheck source=/dev/null
 env_value() { (set +u; source "$test_env" >/dev/null 2>&1; printf '%s' "${!1:-${2:-}}"); }
+
+# A snapshot of the working tree, uncommitted and untracked (not ignored) files
+# included, as a bare repo the VM can clone over git's "dumb HTTP" (plain files).
+snapshot_worktree() {
+  local idx tree commit out
+  need git python3
+  idx=$(mktemp)
+  GIT_INDEX_FILE=$idx git -C "$repo" read-tree HEAD
+  GIT_INDEX_FILE=$idx git -C "$repo" add -A
+  tree=$(GIT_INDEX_FILE=$idx git -C "$repo" write-tree)
+  rm -f "$idx"
+  commit=$(GIT_AUTHOR_NAME=test-vm GIT_AUTHOR_EMAIL=test-vm@localhost GIT_COMMITTER_NAME=test-vm \
+           GIT_COMMITTER_EMAIL=test-vm@localhost git -C "$repo" commit-tree -m "vm test snapshot" "$tree")   # no parent: CI checkouts are shallow
+  rm -rf "$git_srv"
+  git init -q --bare "$git_srv/llangvilla.git"
+  # A shallow checkout (CI's) prints push-negotiation noise; show it only on failure.
+  out=$(git -C "$repo" push -q "$git_srv/llangvilla.git" "$commit:refs/heads/main" 2>&1) \
+    || { printf '%s\n' "$out" >&2; die "Could not store the working-tree snapshot."; }
+  git -C "$git_srv/llangvilla.git" symbolic-ref HEAD refs/heads/main
+  git -C "$git_srv/llangvilla.git" update-server-info
+  ok "Working-tree snapshot for the first-boot hook: ${commit:0:12}"
+}
+
+# Serve the snapshot while the VM runs (its first boot clones from it). Host loopback
+# only: QEMU's user networking maps the VM's 10.0.2.2 to it.
+git_server_pid=""
+serve_worktree() {
+  [[ $(env_value CONFIG_REPO_URL) == "$git_url" ]] || return 0
+  [[ -d $git_srv/llangvilla.git ]] || die "No working-tree snapshot in $git_srv. Run: vm/test-vm.sh install"
+  python3 -m http.server --bind 127.0.0.1 --directory "$git_srv" "$git_port" >/dev/null 2>&1 &
+  git_server_pid=$!
+  sleep 1
+  kill -0 "$git_server_pid" 2>/dev/null || die "Could not serve the snapshot on port $git_port (in use? set VM_GIT_PORT)."
+}
+
+# Stop what vm_up started (on exit, or from vm_down).
+# (`kill … || true`: under set -e a failing kill would end the script, and QEMU has
+# usually exited by itself after a poweroff.)
+cleanup() {
+  if [[ -n ${qemu_pid:-} ]]; then kill "$qemu_pid" 2>/dev/null || true; fi
+  if [[ -n $git_server_pid ]]; then kill "$git_server_pid" 2>/dev/null || true; fi
+}
 
 # The stick-side config: base env with placeholders filled + test overrides.
 make_test_env() {
@@ -183,7 +237,12 @@ make_test_env() {
     echo "ON_FAILURE=poweroff"
     echo "PASSWORD_HASH='${hash}'"
     echo "SSH_AUTHORIZED_KEYS='${pub}'"
-    (( keep_firstboot )) || echo "CONFIG_REPO_URL=''"
+    if (( firstboot )); then
+      echo "CONFIG_REPO_URL='$git_url'"
+      echo "CONFIG_REPO_BRANCH=main"
+    else
+      echo "CONFIG_REPO_URL=''"
+    fi
   } >> "$test_env"
   chmod 600 "$test_env"
   bash "$ai/install.sh" --check "$test_env" >/dev/null || {
@@ -217,7 +276,7 @@ wait_ssh() {
   until ssh "${S[@]}" "$vm_user@127.0.0.1" true 2>/dev/null; do
     (( SECONDS < deadline )) || return 1
     kill -0 "$qemu_pid" 2>/dev/null || die "The VM exited before SSH came up ($what)."
-    sleep 5
+    sleep 10   # every 5 s would trip the firewall's SSH rate limit (6 in 30 s)
   done
 }
 
@@ -249,6 +308,14 @@ vm_sudo() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' $*"
 }
 
+# Run a script, given on stdin, as root on the VM (stdin of vm_sudo is the password).
+vm_root_sh() {
+  local f="/tmp/vm-test-$$-$RANDOM.sh"
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "cat > $f" || return 1
+  vm_sudo bash "$f"
+}
+
 # Boot the installed disk in the background and wait for SSH.
 vm_up() {
   local show=${gui:-0}
@@ -259,9 +326,10 @@ vm_up() {
   vm_user=$(env_value USER_NAME)
   step "Booting the installed system (headless unless --gui)"
   qemu_base "$disk" "$show"
+  serve_worktree
   "${Q[@]}" &
   qemu_pid=$!
-  trap 'kill "$qemu_pid" 2>/dev/null || true' EXIT
+  trap cleanup EXIT
   wait_ssh $(( SECONDS + 15 * 60 )) "boot" || die "SSH did not come up within 15 minutes."
   ok "SSH is up"
 }
@@ -269,34 +337,47 @@ vm_up() {
 vm_down() {
   step "Powering the VM off"
   vm_sudo systemctl poweroff 2>/dev/null || true
+  ssh_close
   for _ in $(seq 1 60); do kill -0 "$qemu_pid" 2>/dev/null || break; sleep 2; done
-  kill "$qemu_pid" 2>/dev/null || true
+  cleanup
   trap - EXIT
 }
 
 vm_reboot() {
   info "Rebooting the VM..."
   vm_sudo systemctl reboot 2>/dev/null || true
+  ssh_close
   sleep 30
   wait_ssh $(( SECONDS + 10 * 60 )) "after the reboot" || die "SSH did not come back after the reboot."
 }
 
-# With --firstboot, the installed system runs the first-boot hook (and reboots once).
+# Unless --no-firstboot, the installed system runs the first-boot hook (and reboots once).
+# On failure: the hook's journal and the newest apply.sh log, then stop.
+firstboot_failed() {
+  ssh "${S[@]}" "$vm_user@127.0.0.1" journalctl -u llangvilla-firstboot.service -b --no-pager 2>/dev/null | tail -n 40 >&2 || true
+  # shellcheck disable=SC2016  # $ expands on the VM
+  vm_sudo 'bash -c "f=\$(ls -1t /var/log/llangvilla/apply-*.log 2>/dev/null | head -n1); [ -n \"\$f\" ] && { echo \"--- \$f\"; tail -n 60 \"\$f\"; }"' >&2 || true
+  die "$1 (journal and apply log above)."
+}
+
 wait_firstboot() {
-  local deadline
+  local deadline waited=0
   [[ -n $(env_value CONFIG_REPO_URL) ]] || return 0
   info "Waiting for the first-boot hook to finish (up to 40 min)..."
   deadline=$(( SECONDS + 40 * 60 ))
   until ssh "${S[@]}" "$vm_user@127.0.0.1" test -e /var/lib/llangvilla/firstboot.done 2>/dev/null; do
-    if (( SECONDS >= deadline )); then
-      ssh "${S[@]}" "$vm_user@127.0.0.1" journalctl -u llangvilla-firstboot.service -b --no-pager 2>/dev/null | tail -n 40 >&2 || true
-      die "The first-boot hook did not finish (journal above)."
+    waited=1
+    if ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-failed --quiet llangvilla-firstboot.service 2>/dev/null; then
+      firstboot_failed "The first-boot hook failed"
     fi
+    (( SECONDS < deadline )) || firstboot_failed "The first-boot hook did not finish within 40 minutes"
     sleep 10
   done
   ok "First-boot hook finished"
-  if [[ $(env_value FIRSTBOOT_REBOOT_AFTER 1) == 1 ]]; then
+  # Its reboot happened already if the marker was there when we looked.
+  if (( waited )) && [[ $(env_value FIRSTBOOT_REBOOT_AFTER 1) == 1 ]]; then
     info "Waiting for its automatic reboot..."
+    ssh_close
     sleep 30
     wait_ssh $(( SECONDS + 10 * 60 )) "after the first-boot reboot" || die "SSH did not come back after the reboot."
   fi
@@ -330,6 +411,7 @@ do_install() {
     find_iso
     step "Preparing the test stick"
     make_test_env
+    if (( firstboot )); then snapshot_worktree; fi
     make_stick
     Q+=(-drive "file=$iso,media=cdrom,if=none,id=cd,readonly=on" -device "ide-cd,drive=cd,bootindex=0"
         -drive "file=$stick_img,format=raw,if=none,id=stick"
@@ -460,20 +542,32 @@ CHECKS
   ok "All base-system checks passed"
 }
 
+# With from_firstboot=1 (`all`), the first-boot hook has already applied the
+# working-tree snapshot it cloned to /opt/llangvilla: re-apply that checkout. Otherwise
+# (`config`, the quick loop) copy the working tree's config/ and apply it first.
 do_config() {
-  local out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" sys_state
+  local from_firstboot=${1:-0} out apply="/home/\$USER/$worktree_dir/config/apply.sh --no-pull" sys_state
   vm_up
   wait_firstboot
 
-  step "Copying the working tree's config/ to the VM (~/$worktree_dir)"
-  # shellcheck disable=SC2029  # expanding on the client side is the point
-  tar -C "$repo" --exclude='*.retry' -cz config \
-    | ssh "${S[@]}" "$vm_user@127.0.0.1" "rm -rf ~/$worktree_dir && mkdir ~/$worktree_dir && tar -xz -C ~/$worktree_dir"
-  ok "Copied"
+  if (( from_firstboot )); then
+    apply="/opt/llangvilla/config/apply.sh --no-pull"
+    ok "The first-boot hook applied the working tree (its checkout: /opt/llangvilla)"
+  else
+    step "Copying the working tree's config/ to the VM (~/$worktree_dir)"
+    # shellcheck disable=SC2029  # expanding on the client side is the point
+    tar -C "$repo" --exclude='*.retry' -cz config \
+      | ssh "${S[@]}" "$vm_user@127.0.0.1" "rm -rf ~/$worktree_dir && mkdir ~/$worktree_dir && tar -xz -C ~/$worktree_dir"
+    ok "Copied"
 
-  step "Applying the config (config/apply.sh --no-pull)"
-  vm_sudo "$apply" || die "config/apply.sh failed (output above)."
-  ok "Config applied"
+    step "Applying the config (config/apply.sh --no-pull)"
+    vm_sudo "$apply" || die "config/apply.sh failed (output above)."
+    ok "Config applied"
+  fi
+  # shellcheck disable=SC2016  # $ expands on the VM
+  ssh "${S[@]}" "$vm_user@127.0.0.1" 'systemctl is-enabled --quiet reflector.timer && pacman -Q base-devel man-db man-pages >/dev/null' \
+    || die "The mirrors or packages role is incomplete (reflector.timer, base-devel, man-db, man-pages)."
+  ok "Mirror refresh scheduled; build tools and man pages installed"
 
   ssh "${S[@]}" "$vm_user@127.0.0.1" test -L .local/state/nix/profiles/home-manager \
     || die "home-manager produced no generation for $vm_user."
@@ -482,14 +576,34 @@ do_config() {
     || die "apply.sh wrote no log to /var/log/llangvilla/."
   ok "apply.sh logged to /var/log/llangvilla/"
 
+  # Three fake old snapshots, so the second run's pruning (newest 3 kept) has work to do.
+  vm_root_sh <<'SH' || die "Could not add fake old snapshots to /.snapshots."
+set -e
+for i in 1 2 3; do btrfs subvolume snapshot -r / "/.snapshots/before-upgrade-20000101-00000$i" >/dev/null; done
+SH
+
   step "Applying it again: nothing should change"
-  out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
+  # --diff: a task that changes something shows exactly what.
+  out=$(vm_sudo "$apply -- --diff" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
-    grep -E '^(changed|TASK)' <<<"$out" | grep -B1 '^changed' >&2 || true
+    # Each changed task with its diff: from its TASK line to the next task.
+    awk '/^TASK /{block=$0; keep=0; next} {block=block "\n" $0} /^changed:/{keep=1} keep && /^$/{print block; keep=0}' <<<"$out" >&2 || true
     die "The second run changed things (above), so some task is not idempotent."
   else
     ok "Second run changed nothing"
   fi
+
+  # Two real snapshots (one per run) plus three fakes: the two oldest fakes must be gone.
+  vm_root_sh <<'SH' || die "Snapshots before upgrades are wrong (above)."
+snaps=(/.snapshots/before-upgrade-*)
+printf '  %s\n' "${snaps[@]}"
+[[ ${#snaps[@]} == 3 ]] || { echo "expected the newest 3 snapshots, found ${#snaps[@]}"; exit 1; }
+[[ ${snaps[0]} == */before-upgrade-20000101-000003 ]] || { echo "the oldest snapshots were not the ones deleted"; exit 1; }
+for s in "${snaps[@]}"; do
+  [[ $(btrfs property get -ts "$s" ro) == ro=true ]] || { echo "$s is not read-only"; exit 1; }
+done
+SH
+  ok "Snapshots before upgrades: the newest 3 kept, read-only"
 
   step "Checking the housekeeping timers and services"
   vm_sudo systemctl is-enabled --quiet paccache.timer llangvilla-nix-cleanup.timer llangvilla-firmware-check.timer \
@@ -512,16 +626,161 @@ do_config() {
     die "After applying the config, systemd is '$sys_state' (failed units above)."
   }
   ok "systemd: running, no failed units"
+  check_config_results
   ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-active --quiet display-manager.service \
     || die "The display manager (login screen) is not active."
   ok "display manager (login screen) is active"
   ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qw zswap.enabled=0 /proc/cmdline \
     || die "zswap.enabled=0 is not on the kernel command line after the reboot (boot role)."
   ok "zswap is off (kernel command line)"
+  out=$(vm_sudo ufw status verbose 2>&1) || { printf '%s\n' "$out" >&2; die "ufw status failed."; }
+  if ! { grep -q '^Status: active' <<<"$out" &&
+         grep -q '^Default: deny (incoming), allow (outgoing)' <<<"$out" &&
+         grep -Eq '^22/tcp +LIMIT IN' <<<"$out"; }; then
+    printf '%s\n' "$out" >&2
+    die "The firewall is not as the firewall role sets it (ufw status above)."
+  fi
+  ok "Firewall: incoming blocked, SSH rate-limited (and still reachable)"
   vm_screenshot login-after-config
+
+  check_desktop "$apply"
 
   vm_down
   ok "Config applied cleanly. See it with: vm/test-vm.sh boot"
+}
+
+# What the config produces, file by file, after it has been applied. Expected values
+# come from config/home/theme.json (the look) and the roles' defaults; settings that
+# Plasma applies only at login are not checked here.
+check_config_results() {
+  local remote fails=0
+  step "Checking what the config produced"
+  remote=$(python3 - "$repo/config/home/theme.json" "$test_password" <<'PY'
+import json, shlex, sys
+t = json.load(open(sys.argv[1]))
+v = {
+    "PW": sys.argv[2],
+    "SCHEME": t["colorScheme"], "ICONS": t["iconTheme"], "GTK": t["gtkTheme"],
+    "PLASMA": t["plasmaTheme"], "DECO": t["windowDecoration"].removeprefix("__aurorae__svg__"),
+    "CURSOR": t["cursor"]["theme"], "CURSOR_SIZE": str(t["cursor"]["size"]),
+    "FONT": t["font"]["family"], "FONT_SIZE": str(t["font"]["size"]),
+    "WP_NAME": t["wallpaper"]["name"], "WP_SIZE": t["wallpaper"]["size"],
+}
+print(" ".join(f"{k}={shlex.quote(x)}" for k, x in v.items()) + " bash -s")
+PY
+)
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
+fails=0
+pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
+fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
+check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-not as expected}"; fi; }
+s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
+img="/usr/share/wallpapers/$WP_NAME/contents/images/$WP_SIZE.jpg"
+greeter=$(getent passwd plasmalogin | cut -d: -f6)
+
+# login_screen
+check "login screen: wallpaper drop-in"  s grep -qx "Image=file://$img" /etc/plasmalogin.conf.d/10-llangvilla.conf
+# Once the login screen has started, Plasma replaces ColorScheme with the SHA-1 of the
+# scheme file it applied (login_screen role): either means the scheme is set.
+greeter_scheme() {
+  local h
+  h=$(sha1sum "/usr/share/color-schemes/$SCHEME.colors" | cut -d' ' -f1)
+  s grep -qx -e "ColorScheme=$SCHEME" -e "ColorSchemeHash=$h" "$greeter/.config/kdeglobals"
+}
+check "login screen: colour scheme"      greeter_scheme
+check "login screen: icons"              s grep -qx "Theme=$ICONS" "$greeter/.config/kdeglobals"
+check "login screen: font"               s grep -q "^font=$FONT,$FONT_SIZE," "$greeter/.config/kdeglobals"
+check "login screen: cursor"             s grep -qx "cursorTheme=$CURSOR" "$greeter/.config/kcminputrc"
+check "login screen: cursor size"        s grep -qx "cursorSize=$CURSOR_SIZE" "$greeter/.config/kcminputrc"
+check "wallpaper package $WP_NAME"       test -f "$img" -a -f "/usr/share/wallpapers/$WP_NAME/metadata.json"
+# theme
+check "window decoration $DECO"          test -d "/usr/share/aurorae/themes/$DECO"
+check "colour scheme $SCHEME"            test -f "/usr/share/color-schemes/$SCHEME.colors"
+check "Plasma style $PLASMA"             test -d "/usr/share/plasma/desktoptheme/$PLASMA"
+check "icons $ICONS"                     test -f "/usr/share/icons/$ICONS/index.theme"
+check "cursors $CURSOR"                  test -d "/usr/share/icons/$CURSOR/cursors"
+check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0"
+# user_avatar
+check "avatar icon"                      test -f "/var/lib/AccountsService/icons/$USER"
+check "avatar entry"                     s grep -qx "Icon=/var/lib/AccountsService/icons/$USER" "/var/lib/AccountsService/users/$USER"
+# boot
+check "zswap off in every boot entry"    s bash -c 'for f in /boot/loader/entries/*.conf; do grep -q "^options.*zswap\.enabled=0" "$f" || { echo "$f"; exit 1; }; done'
+# nix
+check "Nix daemon socket active"         systemctl is-active nix-daemon.socket
+check "Nix flakes enabled"               grep -qx 'experimental-features = nix-command flakes' /etc/nix/nix.conf
+# home_manager (written during the switch; colours, icons and panels come at login)
+check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
+check "keyboard layout gb (kxkbrc)"      grep -qx 'LayoutList=gb' "$HOME/.config/kxkbrc"
+check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"
+check "window decoration selected"       grep -qx "theme=__aurorae__svg__$DECO" "$HOME/.config/kwinrc"
+check "interface font $FONT $FONT_SIZE"  grep -q "^font=$FONT,$FONT_SIZE," "$HOME/.config/kdeglobals"
+for app in dolphinrc katerc arkrc; do
+  check "menu bar off ($app)"            grep -qx 'MenuBar=Disabled' "$HOME/.config/$app"
+done
+check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' "$HOME/.config/konsolerc"
+check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
+check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
+check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
+exit $fails
+CHECKS
+  (( fails == 0 )) || die "The config didn't produce everything it should (see above)."
+  ok "Everything the config sets is in place"
+}
+
+# Log in through a test-only autologin (never part of config/), check what Plasma
+# applies at login, then re-apply ($1: the config phase's apply command) with the
+# session running: Plasma's GTK sync may
+# have replaced home-manager's GTK files, and that must not fail the switch.
+check_desktop() {
+  local apply=$1 scheme gtk_files=(.gtkrc-2.0 .config/gtk-3.0/settings.ini .config/gtk-4.0/settings.ini) f replaced=()
+  local dropin=/etc/plasmalogin.conf.d/99-vm-test-autologin.conf
+  scheme=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["colorScheme"])' "$repo/config/home/theme.json")
+
+  step "Logging in (test-only autologin) to check the desktop"
+  # The keys are SDDM's (PLM is its fork). The man page's autologin part is printed for
+  # the log, in case this PLM build names them differently. (Not the binary: it has no
+  # --example-config and starts the login manager instead.)
+  vm_root_sh <<SH || die "Could not set up the test autologin."
+set -e
+echo "  PLM's documented autologin settings (man plasmalogin.conf):"
+timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E 'autologin|^ *(User|Session|Relogin)=' | head -n 30 | sed 's/^/    /' || echo "    (no man page)"
+test -f /usr/share/wayland-sessions/plasma.desktop
+mkdir -p ${dropin%/*}
+printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
+SH
+  vm_reboot
+  ssh "${S[@]}" "$vm_user@127.0.0.1" \
+    'for i in $(seq 1 90); do pgrep -u "$USER" -x plasmashell >/dev/null && exit 0; sleep 2; done; exit 1' \
+    || die "No Plasma session for $vm_user within 3 minutes of the reboot (autologin keys wrong? see above)."
+  ok "Plasma session running for $vm_user"
+  info "Giving plasma-manager's login script time to apply..."
+  sleep 45
+  vm_screenshot desktop-after-login
+
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qx 'ColorScheme=$scheme' .config/kdeglobals" \
+    || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
+  ok "Colour scheme $scheme applied at login"
+
+  for f in "${gtk_files[@]}"; do
+    ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || replaced+=("$f")
+  done
+  if (( ${#replaced[@]} )); then
+    info "Plasma replaced home-manager's GTK files at login: ${replaced[*]}"
+  else
+    info "Plasma left home-manager's GTK files alone at login"
+  fi
+
+  step "Re-applying with the session running (GTK files must not clash)"
+  vm_sudo "$apply" \
+    || die "Re-applying after a login failed (output above): a home-manager clash?"
+  for f in "${gtk_files[@]}"; do
+    ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || die "$f (in the home directory) is not home-manager's file after re-applying."
+  done
+  ok "Re-applied cleanly; the GTK files are home-manager's again"
+
+  vm_sudo rm -f "$dropin" || warn "Could not remove the test autologin ($dropin)."
 }
 
 do_boot() {
@@ -534,7 +793,10 @@ do_boot() {
   info "Log in as $(env_value USER_NAME jack) (password '$test_password' for a test install)"
   info "SSH from another terminal: vm/test-vm.sh ssh"
   info "Changes persist on $disk until the next install"
-  exec "${Q[@]}"
+  # Not exec: the first boot after an install clones from the served snapshot.
+  serve_worktree
+  trap cleanup EXIT
+  "${Q[@]}"
 }
 
 do_live() {
@@ -568,12 +830,13 @@ case $cmd in
              # A failed base check still lets the config phase run, so one run reports both.
              base_ok=1
              ( do_check ) || base_ok=0
-             do_config
+             do_config "$firstboot"
              (( base_ok )) || die "The base-system checks failed (see above); the config phase ran anyway."
            fi ;;
   boot)    do_boot ;;
   live)    do_live ;;
   ssh)     do_ssh ;;
   clean)   rm -f "$disk" "$live_disk" "$vars" "$state/OVMF_VARS.live.fd" "$stick_img" "$key" "$key.pub" "$test_env"
+           rm -rf "$git_srv"
            ok "Removed the VM files in $state (logs kept in $state/logs)" ;;
 esac

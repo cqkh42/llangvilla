@@ -75,6 +75,30 @@
     group: "{{ login_screen_greeter_gid }}"
     mode: "0755"
 
+# When the login screen starts, Plasma applies the colour scheme: it copies the
+# colours into kdeglobals, drops ColorScheme and records ColorSchemeHash, the SHA-1 of
+# the scheme file it applied. Setting ColorScheme again after that would change the
+# file on every apply, so it is set only until that hash matches the installed scheme
+# (first run, a Colloid update, or a new scheme in theme.json).
+- name: Look up the installed colour scheme's checksum
+  ansible.builtin.stat:
+    path: "/usr/share/color-schemes/{{ login_screen_color_scheme }}.colors"
+    checksum_algorithm: sha1
+  register: login_screen_scheme_file
+
+- name: Read the login screen user's Plasma settings
+  ansible.builtin.slurp:
+    src: "{{ login_screen_greeter_home }}/.config/kdeglobals"
+  register: login_screen_kdeglobals
+  failed_when: false
+
+- name: Note whether the login screen has already applied that scheme
+  ansible.builtin.set_fact:
+    login_screen_scheme_applied: >-
+      {{ login_screen_scheme_file.stat.exists
+         and (login_screen_kdeglobals.content | default('') | b64decode)
+             is search('(?m)^ColorSchemeHash=' ~ login_screen_scheme_file.stat.checksum ~ '$') }}
+
 - name: Set the login screen's colour scheme, icons and font
   community.general.ini_file:
     path: "{{ login_screen_greeter_home }}/.config/kdeglobals"
@@ -91,6 +115,7 @@
     - {section: Icons, option: Theme, value: "{{ login_screen_icon_theme }}"}
   loop_control:
     label: "{{ item.section }}/{{ item.option }}"
+  when: item.option != 'ColorScheme' or not (login_screen_scheme_applied | bool)
 
 - name: Set the login screen's cursor
   community.general.ini_file:

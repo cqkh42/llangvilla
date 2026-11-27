@@ -7,11 +7,6 @@ name: VM install test
 # break the installer without any commit here, and on demand from the Actions tab.
 on:
   workflow_dispatch:
-    inputs:
-      firstboot:
-        description: "Also run the real first-boot hook (clones the default branch from GitHub)"
-        type: boolean
-        default: false
   schedule:
     - cron: "23 3 * * 1"   # Mondays 03:23 UTC
 
@@ -53,12 +48,10 @@ jobs:
       - name: Build the ISO
         run: installer/build-usb.sh
 
+      # The installed system's first boot runs the real hook against a snapshot of
+      # this checkout, then the config phase re-applies it and checks the result.
       - name: Install, check and apply the config in a VM
-        env:
-          FIRSTBOOT_FLAG: ${{ inputs.firstboot && '--firstboot' || '' }}
-        run: |
-          # shellcheck disable=SC2086  # empty or one flag
-          vm/test-vm.sh all --timeout 75 $FIRSTBOOT_FLAG
+        run: vm/test-vm.sh all --timeout 75
 
       - name: Upload installer logs
         if: always()

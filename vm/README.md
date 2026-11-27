@@ -41,7 +41,7 @@ vm/test-vm.sh [COMMAND] [OPTIONS]
 |---|---|---|
 | `--iso FILE` | `$ISO`, else newest cached | ISO to boot |
 | `--env FILE` | `installer/autoinstall.env.example` | Base env for the test stick; placeholders are filled and test overrides appended |
-| `--firstboot` | off | Keep `CONFIG_REPO_URL`, so the installed system runs the real first-boot hook (clones from GitHub, not the working tree). `check` waits for it |
+| `--no-firstboot` | off | Install a plain base (`CONFIG_REPO_URL=''`). By default the installed system's first boot runs the real hook against a snapshot of the working tree ([below](#first-boot-from-the-working-tree)) |
 | `--baked` | off | Use the `install.sh` baked into the ISO instead of the working tree's |
 | `--stick DEV` | — | Install from a real USB stick with its own env (needs sudo). `check` and `config` can't log in afterwards; use `boot` |
 | `--gui`, `--headless` | headless, except `boot`/`live` | Show or hide the VM window |
@@ -54,6 +54,7 @@ vm/test-vm.sh [COMMAND] [OPTIONS]
 |---|---|---|
 | `OVMF_CODE`, `OVMF_VARS` | auto-detected | Firmware files (found on Arch, Debian/Ubuntu and Fedora) |
 | `VM_SSH_PORT` | `2222` | Host port forwarded to the VM's SSH |
+| `VM_GIT_PORT` | `8418` | Host port (loopback) serving the working-tree snapshot to the first-boot hook |
 | `VM_MEMORY` | `4G` | VM memory |
 | `TEST_PASSWORD` | `test` | Password of the test user |
 
@@ -66,7 +67,7 @@ The test `autoinstall.env` is the template with these overrides:
 - `TARGET_DISK=auto` and `CONFIRM_SECONDS=0`;
 - `ON_FAILURE=poweroff`, so a failure ends the VM instead of waiting at a shell;
 - the test password hash and a generated SSH key;
-- `CONFIG_REPO_URL=''` unless `--firstboot` is given.
+- `CONFIG_REPO_URL` pointing at a snapshot of the working tree, served to the VM (`CONFIG_REPO_URL=''` with `--no-firstboot`).
 
 The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO's installer hands over to that `install.sh`, so installer changes need no ISO rebuild.
 
@@ -82,18 +83,29 @@ The working tree's `install.sh` and `packages.txt` go on the stick, and the ISO'
 - root is locked
 - the Wi-Fi profile has mode 600
 - SSH refuses passwords (checked from the host)
-- with `--firstboot`: the hook's done marker and `/opt/llangvilla` exist, and there is no failure notice
+- the first-boot hook ran (unless `--no-firstboot`): its done marker and `/opt/llangvilla` exist, and there is no failure notice. `check` waits for the hook, and stops early with its journal and the newest `apply.sh` log if it fails
 
 If a base check fails, `all` still runs the config phase and fails at the end, so one run reports both.
 
 It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/screens/` (QEMU's `screendump`, needs `python3`). The VM workflow uploads it with the installer logs.
 
+### First boot from the working tree
+
+`install` commits a snapshot of the working tree (uncommitted and untracked files included, ignored ones not) into a throwaway repo, `~/.cache/llangvilla/vm/worktree-git/`. While the VM runs, the test serves it over plain HTTP on the host's loopback (port `VM_GIT_PORT`, default 8418), which the VM reaches as `10.0.2.2`. The test env points `CONFIG_REPO_URL` there, so the installed system runs the **real** hand-over on your changes: clone to `/opt/llangvilla`, `config/apply.sh` (with its `git pull`), the restart report, the failure notice, the reboot. Nothing needs pushing first.
+
 ### Config (`config`)
 
+In `all`, the first-boot hook has already applied the config, so the config phase starts at step 3 and re-applies `/opt/llangvilla`. Run on its own (`vm/test-vm.sh config`, the quick loop on an existing install), it starts at step 1:
+
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
-2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, or if no log appears in `/var/log/llangvilla/`.
-3. Runs it again and fails if any task reports a change. Then checks the housekeeping timers are enabled, and runs the Nix cleanup and the firmware check once (the VM has no updatable firmware, so the check must report none).
-4. Reboots and checks that systemd reports `running`, the display manager is active and `zswap.enabled=0` is on the kernel command line, then saves a screenshot of the login screen.
+2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, if no log appears in `/var/log/llangvilla/`, or if `reflector.timer`, `base-devel`, `man-db` or `man-pages` are missing.
+3. Runs it again and fails if any task reports a change. Before this run it adds three fake old snapshots, and afterwards checks that only the newest 3 `before-upgrade-*` snapshots are left, all read-only. Then checks the housekeeping timers are enabled, and runs the Nix cleanup and the firmware check once (the VM has no updatable firmware, so the check must report none).
+4. Reboots and checks that systemd reports `running`, everything the config sets is in place (below), the display manager is active, `zswap.enabled=0` is on the kernel command line and the firewall is on (incoming blocked, SSH rate-limited), then saves a screenshot of the login screen.
+5. Logs in through a **test-only autologin** (a drop-in in `/etc/plasmalogin.conf.d/` written by the test, never part of `config/`), waits for Plasma, saves a screenshot of the desktop and checks the colour scheme from `config/home/theme.json` was applied at login. It reports whether Plasma replaced home-manager's GTK files, then re-applies with the session running and fails if home-manager clashes or the GTK files aren't its own again. The autologin is removed at the end.
+
+The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, `gb` keyboard, window buttons and decoration, fonts, menu bars off, the GTK settings). Settings Plasma applies only at login are checked in step 5.
+
+The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
 
 ## Workflows
 
@@ -101,7 +113,7 @@ It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/s
 |---|---|
 | `install.sh` or `installer/packages.txt` | `vm/test-vm.sh` |
 | `config/` | `vm/test-vm.sh config` on an existing install, then `vm/test-vm.sh boot`. Run the full `vm/test-vm.sh` before merging |
-| The first-boot hook | `vm/test-vm.sh --firstboot` (needs the change pushed, since the hook clones from GitHub) |
+| The first-boot hook | `vm/test-vm.sh` (the hook runs on the working tree by default) |
 | A real stick, before using it | `vm/test-vm.sh install --stick /dev/sdX` with `TARGET_DISK=auto` on the stick, then `vm/test-vm.sh boot` |
 
 ## Files
@@ -118,7 +130,7 @@ All under `~/.cache/llangvilla/vm/`:
 
 ## CI
 
-`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs every Monday, to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**, with an optional `firstboot` input. Installer logs are uploaded as an artifact.
+`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs every Monday, to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
 
 ## Troubleshooting
 
@@ -129,4 +141,6 @@ All under `~/.cache/llangvilla/vm/`:
 | `No ISO found` | Build one with `installer/build-usb.sh`, or pass `--iso` |
 | `config/apply.sh failed` | The playbook output is shown above. Inspect with `vm/test-vm.sh boot` and `vm/test-vm.sh ssh` |
 | `The second run changed things` | A task isn't idempotent; the changed tasks are listed ([writing tasks](../config/README.md#writing-tasks)) |
-| `--ansible was replaced` | Use `--firstboot` for the hook from GitHub, or `config` for the working tree |
+| `--firstboot is now the default` | The hook always runs on the working tree; use `--no-firstboot` to skip it |
+| `Could not serve the snapshot on port 8418` | Something else uses the port: set `VM_GIT_PORT` |
+| `The first-boot hook failed` | Its journal and the newest `apply.sh` log are shown above. Look around with `vm/test-vm.sh boot` |
