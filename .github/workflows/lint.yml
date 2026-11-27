@@ -22,22 +22,15 @@ jobs:
       - name: Install ShellCheck (pinned; Dependabot bumps it)
         run: pip install --user "$(grep '^shellcheck-py==' .github/lint/requirements.txt)"
 
-      - name: ShellCheck
-        run: ~/.local/bin/shellcheck installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh   # the pinned one, not the runner's
+      # The checks themselves live in the Makefile (one copy for CI and people).
+      - name: ShellCheck (the pinned one, not the runner's)
+        run: make lint-shell SHELLCHECK=~/.local/bin/shellcheck
 
-      - name: Env template parses as bash
-        run: bash -n installer/autoinstall.env.example
+      - name: Env template passes install.sh --check once filled in, and is rejected as it is
+        run: make lint-env
 
-      - name: Env template passes install.sh --check once filled in
-        run: |
-          hash=$(openssl passwd -6 ci-test)
-          tmpl=installer/autoinstall.env.example
-          sed -e 's|__WIFI_SSID__|CI|' \
-              -e 's|__WIFI_PASSWORD__|ci-password|' \
-              -e "s|__PASSWORD_HASH__|${hash}|" "$tmpl" > /tmp/ci.env
-          bash installer/install.sh --check /tmp/ci.env
-          # and the raw template must be rejected (placeholders left)
-          ! bash installer/install.sh --check "$tmpl"
+      - name: Links and anchors in the docs
+        run: make lint-docs
 
   config:
     runs-on: ubuntu-latest
@@ -48,17 +41,8 @@ jobs:
       - name: Install linters (pinned; Dependabot bumps them)
         run: pip install --user -r .github/lint/requirements.txt
 
-      - name: yamllint
-        run: yamllint .
-
-      - name: ansible-lint
-        run: ansible-lint config/ansible
-
-      - name: Playbook syntax
-        working-directory: config/ansible
-        env:
-          ANSIBLE_CONFIG: ansible.cfg
-        run: ansible-playbook --syntax-check site.yml
+      - name: yamllint, ansible-lint, playbook syntax
+        run: make lint-yaml lint-ansible
 
   home:
     runs-on: ubuntu-latest
@@ -78,11 +62,5 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 3G
 
-      - name: Flake check
-        run: nix flake check ./config/home
-
-      - name: Formatting (nixfmt)
-        run: git ls-files -z 'config/home/*.nix' | xargs -0 nix run ./config/home#formatter.x86_64-linux -- --check
-
-      - name: Build the home configuration
-        run: nix build ./config/home#homeConfigurations.jack.activationPackage --no-link
+      - name: Flake check, nixfmt, build of the home configuration
+        run: make lint-nix
