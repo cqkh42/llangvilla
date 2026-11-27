@@ -26,6 +26,8 @@ in
         theme = theme.windowDecoration;
       };
       inherit wallpaper;
+      # No splash between login and the desktop (writes ksplashrc: Engine=none).
+      splashScreen.theme = "None";
     };
 
     # Close, minimise and maximise on the left, like macOS.
