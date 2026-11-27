@@ -5,6 +5,10 @@
 - name: Personalise the OptiPlex
   hosts: optiplex
   vars:
+    # The machine's facts (login user, keyboard, mirror countries), shared with the
+    # user layer like the look below. user_name must match the installer's USER_NAME.
+    host: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../home/host.json') | from_json }}"
+    user_name: "{{ host.user }}"
     # The look (theme names, fonts, wallpaper), shared with the user layer. It lives
     # in config/home because the Nix flake can only read files inside its directory.
     look: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../home/theme.json') | from_json }}"

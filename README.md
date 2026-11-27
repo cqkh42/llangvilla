@@ -91,7 +91,7 @@ All checks are `make` targets, used by CI too (`.github/workflows/lint.yml`):
 | `make lint-shell` | ShellCheck on every script |
 | `make lint-env` | The `autoinstall.env` template passes `install.sh --check` once filled in, and is rejected as it is |
 | `make lint-yaml`, `make lint-ansible` | yamllint; ansible-lint and a playbook syntax check |
-| `make lint-nix` | `nix flake check`, nixfmt and a build of the home configuration (`make fmt-nix` formats) |
+| `make lint-nix` | `nix flake check` (which builds the home configuration) and nixfmt (`make fmt-nix` formats) |
 | `make lint-docs` | Relative links and `#section` anchors in the Markdown files |
 | `make vm`, `make vm-config` | The VM test: everything, or re-apply `config/` to the existing test VM ([vm](vm/README.md)). CI runs it weekly and on demand |
 

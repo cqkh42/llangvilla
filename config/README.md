@@ -78,11 +78,11 @@ config/
 │   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
 │   ├── theme.json                 the look: theme names, fonts, wallpaper (read by Nix and Ansible)
+│   ├── host.json                  the machine: login user, keyboard layout, mirror countries (likewise)
 │   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
-    ├── host_vars/optiplex.yml     per-machine variables
     ├── requirements.yml           collections, for linting only
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
@@ -102,16 +102,17 @@ config/
 
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
-| `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
+| `host` | `site.yml`, from `config/home/host.json` | `jack`, `gb`, `[GB]` | The machine's facts, shared with the user layer: login user, keyboard layout, mirror countries. Change them there |
+| `user_name` | `site.yml`, `host.user` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist. The flake's `homeConfigurations` entry is named from the same file |
 | `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
 | `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, man-db, man-pages, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
-| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `[GB]`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
+| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `host.mirrorCountries`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
 | `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
-| `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
+| `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply |
 | `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes |
 
 ## User layer
@@ -222,7 +223,7 @@ Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; 
 | Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager | Needed to boot to a usable desktop; changes only on reinstall |
 | Config (this directory) | Apps, themes, settings, anything you expect to change | Applies to the running machine with `apply.sh` |
 
-The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as `user_name` belong in `host_vars`.
+The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as the user name belong in `config/home/host.json`.
 
 ## Writing tasks
 

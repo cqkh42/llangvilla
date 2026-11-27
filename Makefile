@@ -7,7 +7,7 @@
 #                        filled in, and is rejected as it is (placeholders left)
 #   make lint-yaml       yamllint
 #   make lint-ansible    ansible-lint and a playbook syntax check
-#   make lint-nix        nix flake check, nixfmt and a build of the home configuration
+#   make lint-nix        nix flake check (builds the home configuration) and nixfmt
 #   make lint-docs       relative links and #section anchors in the Markdown files
 #   make fmt-nix         format the Nix files (what lint-nix checks)
 #   make vm              vm/test-vm.sh all: install, check and configure a VM
@@ -58,7 +58,6 @@ lint-ansible:
 lint-nix:
 	nix flake check '$(FLAKE)'
 	find config/home -name '*.nix' -print0 | xargs -0 nix run '$(FLAKE)#formatter.x86_64-linux' -- --check
-	nix build '$(FLAKE)#homeConfigurations.jack.activationPackage' --no-link
 
 lint-docs:
 	.github/scripts/check-links.py

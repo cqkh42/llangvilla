@@ -21,6 +21,7 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       home-manager,
       plasma-manager,
@@ -29,6 +30,8 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      # The machine's facts (login user, keyboard), shared with Ansible (site.yml).
+      host = builtins.fromJSON (builtins.readFile ./host.json);
       mkHome =
         username:
         home-manager.lib.homeManagerConfiguration {
@@ -41,8 +44,11 @@
         };
     in
     {
-      # One entry per login user; the key must match Ansible's user_name.
-      homeConfigurations.jack = mkHome "jack";
+      # The login user from host.json, which Ansible's user_name also comes from.
+      homeConfigurations.${host.user} = mkHome host.user;
+
+      # `nix flake check` builds the home configuration (make lint-nix, CI).
+      checks.${system}.home = self.homeConfigurations.${host.user}.activationPackage;
 
       # The home-manager CLI from the same pinned input, so it matches the modules.
       packages.${system}.home-manager = home-manager.packages.${system}.home-manager;

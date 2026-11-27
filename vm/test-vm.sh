@@ -670,11 +670,12 @@ SH
 check_config_results() {
   local remote fails=0
   step "Checking what the config produced"
-  remote=$(python3 - "$repo/config/home/theme.json" "$test_password" <<'PY'
+  remote=$(python3 - "$repo/config/home/theme.json" "$test_password" "$repo/config/home/host.json" <<'PY'
 import json, shlex, sys
 t = json.load(open(sys.argv[1]))
+h = json.load(open(sys.argv[3]))
 v = {
-    "PW": sys.argv[2],
+    "PW": sys.argv[2], "KEYBOARD": h["keyboardLayout"],
     "SCHEME": t["colorScheme"], "ICONS": t["iconTheme"], "GTK": t["gtkTheme"],
     "PLASMA": t["plasmaTheme"], "DECO": t["windowDecoration"].removeprefix("__aurorae__svg__"),
     "CURSOR": t["cursor"]["theme"], "CURSOR_SIZE": str(t["cursor"]["size"]),
@@ -726,7 +727,7 @@ check "Nix daemon socket active"         systemctl is-active nix-daemon.socket
 check "Nix flakes enabled"               grep -qx 'experimental-features = nix-command flakes' /etc/nix/nix.conf
 # home_manager (written during the switch; colours, icons and panels come at login)
 check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
-check "keyboard layout gb (kxkbrc)"      grep -qx 'LayoutList=gb' "$HOME/.config/kxkbrc"
+check "keyboard layout $KEYBOARD (kxkbrc)" grep -qx "LayoutList=$KEYBOARD" "$HOME/.config/kxkbrc"
 check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"
 check "window decoration selected"       grep -qx "theme=__aurorae__svg__$DECO" "$HOME/.config/kwinrc"
 check "interface font $FONT $FONT_SIZE"  grep -q "^font=$FONT,$FONT_SIZE," "$HOME/.config/kdeglobals"

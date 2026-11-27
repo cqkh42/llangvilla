@@ -1,5 +1,5 @@
 ---
-# Mirror countries for reflector (ISO codes). The machine is in the UK.
-mirrors_countries: [GB]
+# Mirror countries for reflector (ISO codes), from config/home/host.json.
+mirrors_countries: "{{ host.mirrorCountries }}"
 # How many of the most recently synced HTTPS mirrors to keep.
 mirrors_latest: 10
