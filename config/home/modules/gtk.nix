@@ -19,6 +19,13 @@ in
     };
   };
 
+  # Plasma's GTK sync (kde-gtk-config) may rewrite these files. Overwrite them on
+  # every apply, without a backup, so the repo wins and a second clash can't fail
+  # the switch (the same rule as overrideConfig in plasma.nix).
+  gtk.gtk2.force = true;
+  xdg.configFile."gtk-3.0/settings.ini".force = true;
+  xdg.configFile."gtk-4.0/settings.ini".force = true;
+
   # No dconf writes: they need a D-Bus session during the switch, which first boot
   # (before login) doesn't have. On Plasma, GTK 4 apps get the dark preference from
   # KDE's desktop portal instead.

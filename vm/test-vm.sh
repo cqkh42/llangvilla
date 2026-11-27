@@ -13,7 +13,8 @@
 #             powers off
 #   config    boots the installed disk headless, applies the working tree's config/
 #             (config/apply.sh --no-pull), applies it again and fails if anything changes,
-#             reboots, checks the login screen comes up, powers off. Repeatable on
+#             reboots, checks the login screen comes up, logs in (test-only
+#             autologin) to check the desktop, re-applies, powers off. Repeatable on
 #             the same install, so it is the quick loop for config changes
 #   boot      boots the installed disk in a window to look around (SSH on port 2222)
 #   ssh       SSH into a VM started with `boot` (extra args run as a command)
@@ -249,6 +250,14 @@ vm_sudo() {
   ssh "${S[@]}" "$vm_user@127.0.0.1" "printf '%s\n' $(printf %q "$test_password") | sudo -S -p '' $*"
 }
 
+# Run a script, given on stdin, as root on the VM (stdin of vm_sudo is the password).
+vm_root_sh() {
+  local f="/tmp/vm-test-$$-$RANDOM.sh"
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "cat > $f" || return 1
+  vm_sudo bash "$f"
+}
+
 # Boot the installed disk in the background and wait for SSH.
 vm_up() {
   local show=${gui:-0}
@@ -482,6 +491,12 @@ do_config() {
     || die "apply.sh wrote no log to /var/log/llangvilla/."
   ok "apply.sh logged to /var/log/llangvilla/"
 
+  # Three fake old snapshots, so the second run's pruning (newest 3 kept) has work to do.
+  vm_root_sh <<'SH' || die "Could not add fake old snapshots to /.snapshots."
+set -e
+for i in 1 2 3; do btrfs subvolume snapshot -r / "/.snapshots/before-upgrade-20000101-00000$i" >/dev/null; done
+SH
+
   step "Applying it again: nothing should change"
   out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
@@ -490,6 +505,18 @@ do_config() {
   else
     ok "Second run changed nothing"
   fi
+
+  # Two real snapshots (one per run) plus three fakes: the two oldest fakes must be gone.
+  vm_root_sh <<'SH' || die "Snapshots before upgrades are wrong (above)."
+snaps=(/.snapshots/before-upgrade-*)
+printf '  %s\n' "${snaps[@]}"
+[[ ${#snaps[@]} == 3 ]] || { echo "expected the newest 3 snapshots, found ${#snaps[@]}"; exit 1; }
+[[ ${snaps[0]} == */before-upgrade-20000101-000003 ]] || { echo "the oldest snapshots were not the ones deleted"; exit 1; }
+for s in "${snaps[@]}"; do
+  [[ $(btrfs property get -ts "$s" ro) == ro=true ]] || { echo "$s is not read-only"; exit 1; }
+done
+SH
+  ok "Snapshots before upgrades: the newest 3 kept, read-only"
 
   step "Rebooting to check the result comes up"
   vm_reboot
@@ -507,8 +534,64 @@ do_config() {
   ok "zswap is off (kernel command line)"
   vm_screenshot login-after-config
 
+  check_desktop
+
   vm_down
   ok "Config applied cleanly. See it with: vm/test-vm.sh boot"
+}
+
+# Log in through a test-only autologin (never part of config/), check what Plasma
+# applies at login, then re-apply with the session running: Plasma's GTK sync may
+# have replaced home-manager's GTK files, and that must not fail the switch.
+check_desktop() {
+  local scheme gtk_files=(.gtkrc-2.0 .config/gtk-3.0/settings.ini .config/gtk-4.0/settings.ini) f replaced=()
+  local dropin=/etc/plasmalogin.conf.d/99-vm-test-autologin.conf
+  scheme=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["colorScheme"])' "$repo/config/home/theme.json")
+
+  step "Logging in (test-only autologin) to check the desktop"
+  # The keys are SDDM's (PLM is its fork). The man page's autologin part is printed for
+  # the log, in case this PLM build names them differently. (Not the binary: it has no
+  # --example-config and starts the login manager instead.)
+  vm_root_sh <<SH || die "Could not set up the test autologin."
+set -e
+echo "  PLM's documented autologin settings (man plasmalogin.conf):"
+timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E 'autologin|^ *(User|Session|Relogin)=' | head -n 30 | sed 's/^/    /' || echo "    (no man page)"
+test -f /usr/share/wayland-sessions/plasma.desktop
+mkdir -p ${dropin%/*}
+printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
+SH
+  vm_reboot
+  ssh "${S[@]}" "$vm_user@127.0.0.1" \
+    'for i in $(seq 1 90); do pgrep -u "$USER" -x plasmashell >/dev/null && exit 0; sleep 2; done; exit 1' \
+    || die "No Plasma session for $vm_user within 3 minutes of the reboot (autologin keys wrong? see above)."
+  ok "Plasma session running for $vm_user"
+  info "Giving plasma-manager's login script time to apply..."
+  sleep 45
+  vm_screenshot desktop-after-login
+
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qx 'ColorScheme=$scheme' .config/kdeglobals" \
+    || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
+  ok "Colour scheme $scheme applied at login"
+
+  for f in "${gtk_files[@]}"; do
+    ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || replaced+=("$f")
+  done
+  if (( ${#replaced[@]} )); then
+    info "Plasma replaced home-manager's GTK files at login: ${replaced[*]}"
+  else
+    info "Plasma left home-manager's GTK files alone at login"
+  fi
+
+  step "Re-applying with the session running (GTK files must not clash)"
+  vm_sudo "/home/\$USER/$worktree_dir/config/apply.sh --no-pull" \
+    || die "Re-applying after a login failed (output above): a home-manager clash?"
+  for f in "${gtk_files[@]}"; do
+    ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || die "$f (in the home directory) is not home-manager's file after re-applying."
+  done
+  ok "Re-applied cleanly; the GTK files are home-manager's again"
+
+  vm_sudo rm -f "$dropin" || warn "Could not remove the test autologin ($dropin)."
 }
 
 do_boot() {

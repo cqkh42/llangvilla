@@ -31,9 +31,6 @@ mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-dr
 # --- bluetooth
 bluez bluez-utils
 
-# --- btrfs snapshots (harmless on ext4)
-snapper snap-pac
-
 # --- tools
 base-devel git man-db nano reflector
 
