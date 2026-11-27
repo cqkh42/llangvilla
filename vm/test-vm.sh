@@ -554,9 +554,11 @@ do_config() {
   ok "apply.sh logged to /var/log/llangvilla/"
 
   step "Applying it again: nothing should change"
-  out=$(vm_sudo "$apply" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
+  # --diff: a task that changes something shows exactly what.
+  out=$(vm_sudo "$apply -- --diff" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
-    grep -E '^(changed|TASK)' <<<"$out" | grep -B1 '^changed' >&2 || true
+    # Each changed task with its diff: from its TASK line to the next task.
+    awk '/^TASK /{block=$0; keep=0; next} {block=block "\n" $0} /^changed:/{keep=1} keep && /^$/{print block; keep=0}' <<<"$out" >&2 || true
     die "The second run changed things (above), so some task is not idempotent."
   else
     ok "Second run changed nothing"
