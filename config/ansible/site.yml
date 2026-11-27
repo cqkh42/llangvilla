@@ -21,6 +21,8 @@
       tags: [mirrors]
     - role: boot
       tags: [boot]
+    - role: firewall
+      tags: [firewall]
     - role: theme
       tags: [theme]
     - role: login_screen

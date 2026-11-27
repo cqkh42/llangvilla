@@ -12,7 +12,8 @@
 #
 # Every run does a full `pacman -Syu` first, unless --no-upgrade: on Arch, installing
 # packages against a stale database is a partial upgrade (config/README.md).
-# Afterwards it says if a reboot, a re-login or service restarts are needed.
+# Before it, a snapshot of / (the newest 3 are kept). Afterwards it says if a
+# reboot, a re-login or service restarts are needed.
 #
 # Must not reboot or restart the display manager: at first boot it runs before the
 # login screen (config/README.md, "Writing tasks").
@@ -103,6 +104,34 @@ fi
 
 # 2. Bring the system up to date, so the playbook installs against a current package
 # database. Then the tools the config needs: the installer only guarantees git and a base.
+
+# Before each upgrade, a read-only snapshot of / as /.snapshots/before-upgrade-<time>,
+# keeping the newest 3: the undo for a bad Arch upgrade, which re-applying can't fix
+# (config/README.md, "Snapshots"). Covers / only: /home, logs and the package cache
+# are separate subvolumes. Skipped where / isn't btrfs or /.snapshots isn't a subvolume.
+snapshot_keep=3
+snapshot_root() {
+  local dir=/.snapshots name snaps old
+  if [[ $(findmnt -no FSTYPE /) != btrfs ]] || ! command -v btrfs >/dev/null; then
+    say "No snapshot before the upgrade: / is not btrfs (or btrfs-progs is missing)."
+    return 0
+  fi
+  if ! btrfs subvolume show "$dir" >/dev/null 2>&1; then
+    say "No snapshot before the upgrade: $dir is not a btrfs subvolume."
+    return 0
+  fi
+  name="$dir/before-upgrade-$(date +%Y%m%d-%H%M%S)"
+  btrfs subvolume snapshot -r / "$name" >/dev/null \
+    || die "Could not snapshot / to $name, so not upgrading. Fix it, or use --no-upgrade."
+  say "Snapshot of / before the upgrade: $name"
+  snaps=("$dir"/before-upgrade-*)   # the timestamps sort oldest first
+  if (( ${#snaps[@]} > snapshot_keep )); then
+    for old in "${snaps[@]:0:${#snaps[@]}-snapshot_keep}"; do
+      btrfs subvolume delete "$old" >/dev/null && say "Deleted the old snapshot $old"
+    done
+  fi
+}
+
 # A run killed mid-transaction (power cut) leaves pacman's lock behind, and every
 # later run would fail on it. Safe to remove when no pacman is running; this run
 # holds the apply lock, so no other apply.sh is about to start one.
@@ -112,6 +141,7 @@ if [[ -e /var/lib/pacman/db.lck ]] && ! pgrep -x pacman >/dev/null; then
 fi
 if (( upgrade )); then
   trap report_restarts EXIT   # also after a failed playbook: the upgrade happened
+  snapshot_root
   say "Upgrading the system (pacman -Syu)..."
   pacman -Syu --noconfirm || die "System upgrade failed. Fix it, or use --no-upgrade to apply without one."
 fi
@@ -120,6 +150,7 @@ if ! command -v ansible-playbook >/dev/null; then
   if (( upgrade )); then
     pacman -S --needed --noconfirm ansible || die "Could not install ansible."
   else
+    snapshot_root   # this is an upgrade too
     pacman -Syu --needed --noconfirm ansible || die "Could not install ansible."
   fi
 fi

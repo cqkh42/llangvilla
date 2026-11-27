@@ -17,7 +17,7 @@
 plasma-desktop plasma-login-manager konsole dolphin
 breeze breeze-gtk kde-gtk-config qqc2-breeze-style plasma-integration xdg-desktop-portal-kde
 systemsettings kinfocenter kmenuedit kde-cli-tools kscreen powerdevil polkit-kde-agent
-plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt plasma-firewall
+plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt
 kwallet-pam ksshaskpass kwrited drkonqi
 kdeplasma-addons milou spectacle plasma-systemmonitor ksystemstats plasma-browser-integration
 plasma-workspace-wallpapers ocean-sound-theme
@@ -30,9 +30,6 @@ mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-dr
 
 # --- bluetooth
 bluez bluez-utils
-
-# --- btrfs snapshots (harmless on ext4)
-snapper snap-pac
 
 # --- tools. nano stays in the base: an editor for rescue work before the config
 # (and vim) has run. Build tools, man pages and reflector come from the config.
