@@ -106,7 +106,8 @@ config/
 | `host` | `site.yml`, from `config/home/host.json` | `jack`, `gb`, `[GB]` | The machine's facts, shared with the user layer: login user, keyboard layout, mirror countries. Change them there |
 | `user_name` | `site.yml`, `host.user` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist. The flake's `homeConfigurations` entry is named from the same file |
 | `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
-| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, man-db, man-pages, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox and its Plasma integration, spectacle, the system monitor, vim, htop, btop, man pages, media codecs, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `packages_remove` | `roles/packages/defaults/main.yml` | `[]` | Removed with pacman, with the dependencies only they needed ([Removing things](#removing-things)) |
 | `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `host.mirrorCountries`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
@@ -245,6 +246,20 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Open a port in the role that adds the service**, with `community.general.ufw`. The firewall role blocks everything else incoming.
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
+
+## Removing things
+
+The config adds and changes things; it doesn't notice what it no longer mentions. Taking a package out of `packages_install`, a file out of a role, or a whole role out of `site.yml` leaves it on the machine. To really remove something:
+
+| What | How |
+|---|---|
+| A package | Move it from `packages_install` to `packages_remove`. Once the machine has applied it, empty `packages_remove` again |
+| A file or directory a role wrote | Add a task to that role with `state: absent` and a comment saying what it retires (the `theme` role's look-and-feel task is one). Delete the task once the machine has applied it |
+| A whole role | Replace its tasks with the `state: absent` tasks for what it wrote (disable its services first), apply, then delete the role and its line in `site.yml` |
+| A package from the base (`installer/packages.txt`) | Take it out of the list and add it to `packages_remove`: the base never removes anything itself |
+| A theme file upstream dropped | Nothing to do: the `theme` role clears the old files whenever a pinned commit changes |
+
+There is one machine, so a retiring task only has to stay until it has applied once; the VM test applies everything from scratch anyway.
 
 ## Making a change
 

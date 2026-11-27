@@ -1,6 +1,22 @@
 ---
 # apply.sh has just run a full `pacman -Syu`, so no update_cache here.
+- name: Remove retired packages
+  community.general.pacman:
+    name: "{{ packages_remove }}"
+    state: absent
+    extra_args: --recursive   # and the dependencies only they needed
+  when: packages_remove | length > 0
+
 - name: Install apps and tools
   community.general.pacman:
     name: "{{ packages_install }}"
     state: present
+
+# pacman's output: colours, and old and new versions in a table before each change.
+- name: Turn on pacman's colours and version table
+  ansible.builtin.lineinfile:
+    path: /etc/pacman.conf
+    regexp: "^#?{{ item }}$"
+    line: "{{ item }}"
+    insertafter: '^\[options\]'
+  loop: [Color, VerbosePkgLists]
