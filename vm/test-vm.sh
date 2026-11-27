@@ -205,10 +205,11 @@ serve_worktree() {
 }
 
 # Stop what vm_up started (on exit, or from vm_down).
+# (`kill … || true`: under set -e a failing kill would end the script, and QEMU has
+# usually exited by itself after a poweroff.)
 cleanup() {
-  [[ -n ${qemu_pid:-} ]] && kill "$qemu_pid" 2>/dev/null
-  [[ -n $git_server_pid ]] && kill "$git_server_pid" 2>/dev/null
-  return 0
+  if [[ -n ${qemu_pid:-} ]]; then kill "$qemu_pid" 2>/dev/null || true; fi
+  if [[ -n $git_server_pid ]]; then kill "$git_server_pid" 2>/dev/null || true; fi
 }
 
 # The stick-side config: base env with placeholders filled + test overrides.
