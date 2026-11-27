@@ -549,12 +549,13 @@ check_desktop() {
   scheme=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["colorScheme"])' "$repo/config/home/theme.json")
 
   step "Logging in (test-only autologin) to check the desktop"
-  # The keys are SDDM's (PLM is its fork). The example config is printed for the log,
-  # in case this PLM build names them differently.
+  # The keys are SDDM's (PLM is its fork). The man page's autologin part is printed for
+  # the log, in case this PLM build names them differently. (Not the binary: it has no
+  # --example-config and starts the login manager instead.)
   vm_root_sh <<SH || die "Could not set up the test autologin."
 set -e
-echo "  PLM's documented [Autologin] keys:"
-plasmalogin --example-config 2>/dev/null | sed -n '/^\[Autologin\]/,/^\[/p' | sed 's/^/    /' || true
+echo "  PLM's documented autologin settings (man plasmalogin.conf):"
+timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E 'autologin|^ *(User|Session|Relogin)=' | head -n 30 | sed 's/^/    /' || echo "    (no man page)"
 test -f /usr/share/wayland-sessions/plasma.desktop
 mkdir -p ${dropin%/*}
 printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
