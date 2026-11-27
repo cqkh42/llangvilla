@@ -1,0 +1,25 @@
+name: Upstream check
+
+# Weekly: newer Colloid themes or a newer Ventoy than this repo pins? Opens (or
+# updates) one issue per finding, with the lines to paste. Dependabot covers the
+# rest (.github/dependabot.yml).
+on:
+  schedule:
+    - cron: "41 2 * * 0"   # Sundays 02:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Look for newer Colloid and Ventoy releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/upstream-check.sh --issues

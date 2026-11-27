@@ -82,12 +82,23 @@ Rules that keep the parts independent:
 
 | Check | Command | CI |
 |---|---|---|
-| Shell scripts | `shellcheck installer/*.sh config/*.sh vm/*.sh` | `lint.yml`, every push |
+| Shell scripts | `shellcheck installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh` | `lint.yml`, every push |
 | Env template | `installer/install.sh --check FILE` | `lint.yml` |
 | YAML | `yamllint .` | `lint.yml` |
 | Ansible | `ansible-lint config/ansible` | `lint.yml` |
 | End to end | `vm/test-vm.sh all` | `vm-test.yml`, weekly and manual (Actions tab) |
 
-Install the linters with `pip install shellcheck-py ansible ansible-lint yamllint`.
+Install the linters, at the versions CI uses, with `pip install -r .github/lint/requirements.txt`.
+
+### Dependency bumps
+
+| Dependency | Bumped by | Merged |
+|---|---|---|
+| GitHub Actions | Dependabot, weekly | Automatically, once lint passes |
+| The linters (`.github/lint/requirements.txt`) | Dependabot, weekly | Automatically, once lint passes |
+| nixpkgs, home-manager, plasma-manager (`config/home/flake.lock`) | Dependabot, weekly; the VM test starts on the PR's branch by itself | By you, once the VM test is green |
+| Colloid themes (`config/ansible/roles/theme/defaults/main.yml`) | `upstream-check.yml` opens an issue with the new commit, weekly | By hand: paste the commit, run the VM test |
+| Ventoy (`installer/build-usb.sh`) | `upstream-check.yml` opens an issue with the new version and its checked SHA-256, weekly | By hand: paste both, rebuild a stick |
+| Arch packages, the ISO's `archlinux` image | Not pinned (rolling) | The weekly VM test catches breakage; snapshots before each upgrade are the undo |
 
 Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. They live only on the USB stick (see [Security](installer/README.md#security)).
