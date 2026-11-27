@@ -120,7 +120,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
 - **`path:`, not git.** The checkout in `/opt/llangvilla` belongs to root and the VM test copies `config/` without `.git`; a `path:` reference works for both.
-- **Existing files are kept.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`).
+- **Existing files are backed up once.** `-b backup` moves a file home-manager would replace to `*.backup` (the stock `~/.bashrc` becomes `~/.bashrc.backup`). A later clash on the same file replaces that backup instead of failing the switch (`HOME_MANAGER_BACKUP_OVERWRITE`), so edit dotfiles in the repo, not on the machine. The three GTK files are overwritten without any backup, since Plasma's GTK sync may rewrite them (`gtk.nix`).
 - **First run is slow.** It fetches nixpkgs and downloads from cache.nixos.org, which first boot waits for (it has no time limit). Later runs take seconds.
 - **Reported as changed** only when the switch produces a new generation, so the second-run check still works.
 - **Plasma in two steps.** [plasma-manager](https://github.com/nix-community/plasma-manager) writes the settings files during the switch (fonts, window buttons, menu bars). The colour scheme, icons, cursor, wallpaper and panels need a running Plasma, so its autostart entry applies them at the next login. With `overrideConfig = true` the repo always wins: changes made in System Settings are reset on the next apply.
@@ -158,11 +158,52 @@ Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role ch
 
 The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
 
+## Snapshots
+
+Before every upgrade, including first boot's, `apply.sh` takes a read-only btrfs snapshot of `/` as `/.snapshots/before-upgrade-<date>-<time>` and keeps the newest 3. They are the undo for a bad Arch upgrade: re-applying the config, or reinstalling, would install the same broken packages again.
+
+- **Covered:** `/` (the system, `/etc`, `/usr`, `/var` apart from the next item).
+- **Not covered:** `/home`, `/var/log` and `/var/cache/pacman/pkg` (separate subvolumes), and `/boot` (FAT, see the kernel step below). Nor a `pacman -Syu` you run by hand, or a run with `--no-upgrade`: upgrade with `apply.sh`.
+- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (`ROOT_FS=ext4`).
+- **If an upgrade broke something, roll back soon.** Each `apply.sh` run takes a new snapshot and drops the oldest, so after three more runs the good one is gone.
+
+List them with `sudo ls /.snapshots/`. To see what changed, compare a directory, e.g. `sudo diff -rq /.snapshots/before-upgrade-<…>/etc /etc`.
+
+### Undo one file or one package
+
+```bash
+sudo cp -a /.snapshots/before-upgrade-<…>/etc/some.conf /etc/some.conf      # a file
+sudo pacman -U /var/cache/pacman/pkg/<name>-<old version>-*.pkg.tar.zst     # a package (the cache keeps old versions)
+```
+
+### Roll the whole system back
+
+From the running system (or the live stick, mounting the root partition instead):
+
+```bash
+sudo mount -o subvolid=5 "$(findmnt -nvo SOURCE /)" /mnt            # the btrfs top level
+sudo mv /mnt/@ /mnt/@broken                                         # keep the broken system for now
+sudo btrfs subvolume snapshot /mnt/@.snapshots/before-upgrade-<…> /mnt/@   # a writable copy becomes /
+sudo umount /mnt
+sudo reboot
+```
+
+The boot entry names the root subvolume (`rootflags=subvol=@`), so the new `@` is used from the next boot. Tools that switch btrfs's *default* subvolume, like `snapper rollback`, have no effect with this layout.
+
+**Then fix the kernel.** `/boot` isn't in the snapshot, so it still holds the newer kernel while `/usr/lib/modules` is back to the old one: hardware that needs a module not yet loaded may not work. Reinstall the snapshot's kernel versions from the package cache, then reboot again:
+
+```bash
+sudo pacman -S linux linux-lts
+sudo reboot
+```
+
+Once everything works, delete the broken system: mount the top level as above, `sudo btrfs subvolume delete /mnt/@broken`, unmount.
+
 ## What goes in the config
 
 | Goes in | Examples | Why |
 |---|---|---|
-| Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager, snapper | Needed to boot to a usable desktop; changes only on reinstall |
+| Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager | Needed to boot to a usable desktop; changes only on reinstall |
 | Config (this directory) | Apps, themes, settings, anything you expect to change | Applies to the running machine with `apply.sh` |
 
 The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as `user_name` belong in `host_vars`.

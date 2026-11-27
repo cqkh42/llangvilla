@@ -1,7 +1,9 @@
 ---
 # Applies the user layer as the login user. The home-manager CLI comes from the
 # flake's pinned input. `-b backup` moves aside files it would otherwise refuse to
-# overwrite (e.g. the stock ~/.bashrc becomes ~/.bashrc.backup).
+# overwrite (e.g. the stock ~/.bashrc becomes ~/.bashrc.backup), and
+# HOME_MANAGER_BACKUP_OVERWRITE replaces an older backup instead of failing the
+# switch on a second clash: edit dotfiles in the repo, not on the machine (#18).
 # The first run fetches nixpkgs and downloads from cache.nixos.org: minutes, not
 # seconds. Changed only when the switch produced a new generation.
 - name: Apply the user layer (home-manager switch)
@@ -19,6 +21,7 @@
     FLAKE: "{{ home_manager_flake_dir }}"
     HM_USER: "{{ user_name }}"
     NIX_REMOTE: daemon   # the store belongs to root; go through the daemon
+    HOME_MANAGER_BACKUP_OVERWRITE: "1"
   become: true
   become_user: "{{ user_name }}"
   register: home_manager_switch
