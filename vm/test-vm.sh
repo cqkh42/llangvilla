@@ -473,70 +473,7 @@ do_check() {
     "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$(env_value CONFIG_REPO_URL)" "$(env_value LOCK_ROOT 1)"
   # shellcheck disable=SC2029  # expanding on the client side is the point
   # Up to 5 minutes for systemd to settle, 1 for the login screen.
-  ssh_limit=600 ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
-fails=0
-pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
-fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
-# </dev/null: this script arrives on stdin, so no check may read from it.
-check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-failed}"; fi; }
-s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
-# On failure, show what sshd decided and which files set it.
-sshd_no_pw() {
-  s sshd -T | grep -qix 'passwordauthentication no' && return 0   # OpenSSH 10 prints CamelCase
-  s sshd -T 2>&1 | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|usepam) '
-  s grep -HnEi '^[[:space:]]*(include|passwordauthentication|kbdinteractiveauthentication|usepam|match)' \
-    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
-  return 1
-}
-wifi_profile() { [[ $(s stat -c %a /etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection) == 600 ]]; }
-# Any display manager registers its login screen with logind as a "greeter" session.
-greeter_session() {
-  local i id
-  for i in $(seq 1 30); do
-    for id in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
-      [[ $(loginctl show-session "$id" -p Class --value) == greeter ]] && return 0
-    done
-    sleep 2
-  done
-  echo "no greeter session after 60 s"; return 1
-}
-
-state=$(timeout 300 systemctl is-system-running --wait 2>&1 </dev/null)
-if [[ $state == running ]]; then pass "systemd: running, no failed units"
-else fail "systemd" "$state; failed: $(systemctl --failed --no-legend --plain | awk '{print $1}' | xargs)"; fi
-check "sudo works for $EXP_USER"   s true
-check "hostname is $EXP_HOST"      test "$(cat /etc/hostname)" = "$EXP_HOST"
-check "full name is '$EXP_REAL'"   test "$(getent passwd "$EXP_USER" | cut -d: -f5)" = "$EXP_REAL"
-check "root fs is btrfs"           test "$(findmnt -no FSTYPE /)" = btrfs
-check "/ is subvolume @"           bash -c 'findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"'
-for m in /home /var/log /var/cache/pacman/pkg /.snapshots; do check "$m is mounted" findmnt -n "$m"; done
-check "fstab has no subvolid="     bash -c '! grep -q subvolid= /etc/fstab'
-check "/boot is the vfat ESP"      test "$(findmnt -no FSTYPE /boot)" = vfat
-check "systemd-boot is installed"  s bootctl is-installed
-for k in $EXP_KERNELS; do
-  check "boot entry for $k"        s test -f "/boot/loader/entries/arch-$k.conf"
-  check "kernel image for $k"      s test -f "/boot/vmlinuz-$k"
-done
-check "timezone is $EXP_TZ"        bash -c "readlink /etc/localtime | grep -q '$EXP_TZ\$'"
-check "LANG is $EXP_LOCALE"        grep -qx "LANG=$EXP_LOCALE" /etc/locale.conf
-check "zram swap is on"            bash -c 'swapon --show=NAME --noheadings | grep -q zram'
-check "zswap is off (kernel command line)" grep -qw zswap.enabled=0 /proc/cmdline
-check "NetworkManager is active"   systemctl is-active NetworkManager
-check "sshd is active"             systemctl is-active sshd
-check "display manager is active ($(systemctl show -p Id --value display-manager.service 2>/dev/null))" \
-  systemctl is-active display-manager.service
-check "login screen is up (a logind greeter session)" greeter_session
-if [[ $EXP_LOCK_ROOT == 1 ]]; then check "root is locked" root_locked; fi
-if [[ $EXP_SSH_PW == 0 ]]; then check "sshd refuses passwords" sshd_no_pw; fi
-if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
-if [[ -n $EXP_FIRSTBOOT ]]; then
-  check "first-boot hook done marker" test -e /var/lib/llangvilla/firstboot.done
-  check "repo checkout in /opt/llangvilla" test -d /opt/llangvilla/.git
-  check "no first-boot failure notice" test ! -e /etc/issue.d/llangvilla-firstboot.issue
-fi
-exit $fails
-CHECKS
+  ssh_limit=600 ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" < "$repo/vm/checks/base.sh" || fails=1
 
   # From the outside: password logins must be refused when key-only is configured.
   if [[ $(env_value SSH_PASSWORD_AUTH 0) == 0 ]]; then
@@ -717,62 +654,7 @@ print(" ".join(f"{k}={shlex.quote(x)}" for k, x in v.items()) + " bash -s")
 PY
 )
   # shellcheck disable=SC2029  # expanding on the client side is the point
-  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
-fails=0
-pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
-fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
-check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-not as expected}"; fi; }
-s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-img="/usr/share/wallpapers/$WP_NAME/contents/images/$WP_SIZE.jpg"
-greeter=$(getent passwd plasmalogin | cut -d: -f6)
-
-# login_screen
-check "login screen: wallpaper drop-in"  s grep -qx "Image=file://$img" /etc/plasmalogin.conf.d/10-llangvilla.conf
-# Once the login screen has started, Plasma replaces ColorScheme with the SHA-1 of the
-# scheme file it applied (login_screen role): either means the scheme is set.
-greeter_scheme() {
-  local h
-  h=$(sha1sum "/usr/share/color-schemes/$SCHEME.colors" | cut -d' ' -f1)
-  s grep -qx -e "ColorScheme=$SCHEME" -e "ColorSchemeHash=$h" "$greeter/.config/kdeglobals"
-}
-check "login screen: colour scheme"      greeter_scheme
-check "login screen: icons"              s grep -qx "Theme=$ICONS" "$greeter/.config/kdeglobals"
-check "login screen: font"               s grep -q "^font=$FONT,$FONT_SIZE," "$greeter/.config/kdeglobals"
-check "login screen: cursor"             s grep -qx "cursorTheme=$CURSOR" "$greeter/.config/kcminputrc"
-check "login screen: cursor size"        s grep -qx "cursorSize=$CURSOR_SIZE" "$greeter/.config/kcminputrc"
-check "wallpaper package $WP_NAME"       test -f "$img" -a -f "/usr/share/wallpapers/$WP_NAME/metadata.json"
-# theme
-check "window decoration $DECO"          test -d "/usr/share/aurorae/themes/$DECO"
-check "colour scheme $SCHEME"            test -f "/usr/share/color-schemes/$SCHEME.colors"
-check "Plasma style $PLASMA"             test -d "/usr/share/plasma/desktoptheme/$PLASMA"
-check "icons $ICONS"                     test -f "/usr/share/icons/$ICONS/index.theme"
-check "cursors $CURSOR"                  test -d "/usr/share/icons/$CURSOR/cursors"
-check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0"
-# user_avatar
-check "avatar icon"                      test -f "/var/lib/AccountsService/icons/$USER"
-check "avatar entry"                     s grep -qx "Icon=/var/lib/AccountsService/icons/$USER" "/var/lib/AccountsService/users/$USER"
-# boot
-check "zswap off in every boot entry"    s bash -c 'for f in /boot/loader/entries/*.conf; do grep -q "^options.*zswap\.enabled=0" "$f" || { echo "$f"; exit 1; }; done'
-# nix
-check "Nix daemon socket active"         systemctl is-active nix-daemon.socket
-check "Nix flakes enabled"               grep -qx 'experimental-features = nix-command flakes' /etc/nix/nix.conf
-# home_manager (written during the switch; colours, icons and panels come at login)
-check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
-check "keyboard layout $KEYBOARD (kxkbrc)" grep -qx "LayoutList=$KEYBOARD" "$HOME/.config/kxkbrc"
-check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"
-check "window decoration selected"       grep -qx "theme=__aurorae__svg__$DECO" "$HOME/.config/kwinrc"
-check "interface font $FONT $FONT_SIZE"  grep -q "^font=$FONT,$FONT_SIZE," "$HOME/.config/kdeglobals"
-for app in dolphinrc katerc arkrc; do
-  check "menu bar off ($app)"            grep -qx 'MenuBar=Disabled' "$HOME/.config/$app"
-done
-check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' "$HOME/.config/konsolerc"
-check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
-check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
-check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
-check "notices at desktop login"         grep -q '^Exec=/nix/store/.*llangvilla-notices' "$HOME/.config/autostart/llangvilla-notices.desktop"
-check "no llangvilla notices pending"    bash -c '! ls /etc/motd.d/llangvilla-* 2>/dev/null'
-exit $fails
-CHECKS
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" < "$repo/vm/checks/config.sh" || fails=1
   (( fails == 0 )) || die "The config didn't produce everything it should (see above)."
   ok "Everything the config sets is in place"
 }

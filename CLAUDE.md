@@ -8,7 +8,7 @@ The root `README.md` has the overview, the layout and the `make` targets; each p
 
 - `installer/` – part 1: the zero-touch installer (`build-usb.sh`, `build.sh`, `install.sh`, `packages.txt`, `autoinstall.env.example`).
 - `config/` – part 2: `apply.sh`, the Ansible playbook (`config/ansible`), the home-manager flake (`config/home`, with `theme.json` for the look and `host.json` for the machine's facts, both read by Nix and Ansible).
-- `vm/` – part 3: `test-vm.sh`, the QEMU test of both.
+- `vm/` – part 3: `test-vm.sh`, the QEMU test of both; `checks/` holds the checks it runs on the VM.
 - `docs/` – `design.md` (what the machine should be), `decisions.md` (what was decided and why), `maintenance.md` (routine tasks, dependency bumps, recovery).
 - `.github/` – CI (lint on every push; the VM test on PRs that touch `installer/`, `config/` or `vm/`, weekly and on demand), Dependabot, the upstream check.
 - The to-do list is GitHub issues (no `TODO.md`).

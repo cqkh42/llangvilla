@@ -105,6 +105,8 @@ In `all`, the first-boot hook has already applied the config, so the config phas
 
 The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, the keyboard layout from `config/home/host.json`, window buttons and decoration, fonts, menu bars off, the GTK settings, the desktop notices' autostart entry), and that no notice is pending. Settings Plasma applies only at login are checked in step 5.
 
+The two lists of checks above run on the VM itself: they are `vm/checks/base.sh` and `vm/checks/config.sh`, piped to `bash -s` over SSH with the expected values as environment variables (so ShellCheck covers them too).
+
 The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
 
 ## What the VM can't test
@@ -141,7 +143,7 @@ All under `~/.cache/llangvilla/vm/`:
 
 ## CI
 
-`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs on every pull request that touches `installer/`, `config/` or `vm/` (Dependabot's Nix bumps included), every Monday to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
+`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs on every pull request that touches `installer/`, `config/` or `vm/` (Dependabot's Nix bumps included; not when only Markdown files change), every Monday to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
 
 ## Troubleshooting
 

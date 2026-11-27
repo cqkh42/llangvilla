@@ -2,7 +2,7 @@
 
 What was decided about how this repo works, and why. Newest last. When a decision changes, add an entry that says which one it replaces; don't rewrite history. The details live in the linked PRs and issues; the docs say how things work today.
 
-Entries 1–19 come from the holistic review of November 2026; 20–25 from its follow-up.
+Entries 1–19 come from the holistic review of November 2026; 20–26 from its follow-up.
 
 ## 1. One repository, three parts
 
@@ -151,3 +151,9 @@ Entries 1–19 come from the holistic review of November 2026; 20–25 from its 
 **Decision:** each fact is described in one place and linked from the others; `CLAUDE.md` holds only what an agent needs beyond the READMEs; the design lives in `docs/design.md`, not on claude.ai. This log holds decisions only: open questions and parked work are issues. Entries 17–19 are tracked as [#20](https://github.com/cqkh42/llangvilla/issues/20), [#29](https://github.com/cqkh42/llangvilla/issues/29) and [#46](https://github.com/cqkh42/llangvilla/issues/46) ([#45](https://github.com/cqkh42/llangvilla/issues/45)).
 
 **Why:** the role list, the `make` targets and the first-boot hook were each written out in three or four places that drifted; the design doc was outside the repo, so code comments pointed at nothing a reader could open.
+
+## 26. A dry run is an apply.sh option
+
+**Decision:** `apply.sh --dry-run` runs the playbook in check mode with `--diff`, with no upgrade and no snapshot; the user layer is built, not switched to. It replaces `--no-upgrade -- --check --diff`, and `apply.sh` no longer looks inside ansible's arguments. The VM test runs it after a clean apply and expects no changes.
+
+**Why:** spotting a dry run by matching `--check` in the arguments missed combined flags like `-CD`, and a dry run that skipped the user layer said nothing about it. One option is easier to remember than three flags.
