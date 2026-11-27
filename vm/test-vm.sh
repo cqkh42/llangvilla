@@ -617,7 +617,14 @@ greeter=$(getent passwd plasmalogin | cut -d: -f6)
 
 # login_screen
 check "login screen: wallpaper drop-in"  s grep -qx "Image=file://$img" /etc/plasmalogin.conf.d/10-llangvilla.conf
-check "login screen: colour scheme"      s grep -qx "ColorScheme=$SCHEME" "$greeter/.config/kdeglobals"
+# Once the login screen has started, Plasma replaces ColorScheme with the SHA-1 of the
+# scheme file it applied (login_screen role): either means the scheme is set.
+greeter_scheme() {
+  local h
+  h=$(sha1sum "/usr/share/color-schemes/$SCHEME.colors" | cut -d' ' -f1)
+  s grep -qx -e "ColorScheme=$SCHEME" -e "ColorSchemeHash=$h" "$greeter/.config/kdeglobals"
+}
+check "login screen: colour scheme"      greeter_scheme
 check "login screen: icons"              s grep -qx "Theme=$ICONS" "$greeter/.config/kdeglobals"
 check "login screen: font"               s grep -q "^font=$FONT,$FONT_SIZE," "$greeter/.config/kdeglobals"
 check "login screen: cursor"             s grep -qx "cursorTheme=$CURSOR" "$greeter/.config/kcminputrc"
