@@ -20,7 +20,9 @@ concurrency:
 jobs:
   vm-install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # Each step has its own limit (install 30 min, first boot 25, every SSH command 5
+    # unless set longer), so a hang fails in minutes; this only backs them up.
+    timeout-minutes: 75
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
@@ -51,7 +53,7 @@ jobs:
       # The installed system's first boot runs the real hook against a snapshot of
       # this checkout, then the config phase re-applies it and checks the result.
       - name: Install, check and apply the config in a VM
-        run: vm/test-vm.sh all --timeout 75
+        run: vm/test-vm.sh all --timeout 30
 
       - name: Upload installer logs
         if: always()

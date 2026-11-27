@@ -39,7 +39,8 @@
 #                    own autoinstall.env is used, so `check` cannot log in; use `boot`.
 #   --gui / --headless   show or hide the VM window (default: shown for boot/live only)
 #   --disk-size GB   size of the virtual target disk (default 60)
-#   --timeout MIN    give up on the install after this long (default 90)
+#   --timeout MIN    give up on the install after this long (default 90). Every SSH
+#                    command after it has a time limit too (5 min; longer for applies)
 #
 # Environment: OVMF_CODE / OVMF_VARS (firmware files, found automatically on Arch,
 # Debian/Ubuntu and Fedora), VM_SSH_PORT (2222), VM_GIT_PORT (8418, the working-tree
@@ -172,6 +173,23 @@ ssh_opts() {
      -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
 }
 ssh_close() { ssh "${S[@]}" -O exit "${vm_user:-x}@127.0.0.1" 2>/dev/null || true; }
+
+# Every SSH command the test runs is time-limited, so a command that hangs on the VM
+# fails its step in minutes instead of stalling the run until CI's own job limit
+# (issue #27). The default suits checks; steps that take longer set their own:
+#   ssh_limit=2400 vm_sudo "$apply"
+# (`exec ssh`, the interactive `ssh` command, has no limit.)
+ssh_limit_default=300
+ssh() {
+  local limit=${ssh_limit:-$ssh_limit_default} rc=0 what=${*: -1}
+  # The binary, not this function (and not `command`: timeout runs programs only).
+  timeout --foreground "$limit" "$(type -P ssh)" "$@" || rc=$?
+  if (( rc == 124 )); then
+    (( ${#what} > 100 )) && what="${what:0:100}..."
+    warn "An SSH command timed out after ${limit} s: $what"
+  fi
+  return "$rc"
+}
 
 # Values the test env sets, read in a subshell so they cannot clobber ours.
 # shellcheck source=/dev/null
@@ -363,14 +381,14 @@ firstboot_failed() {
 wait_firstboot() {
   local deadline waited=0
   [[ -n $(env_value CONFIG_REPO_URL) ]] || return 0
-  info "Waiting for the first-boot hook to finish (up to 40 min)..."
-  deadline=$(( SECONDS + 40 * 60 ))
+  info "Waiting for the first-boot hook to finish (up to 25 min)..."
+  deadline=$(( SECONDS + 25 * 60 ))
   until ssh "${S[@]}" "$vm_user@127.0.0.1" test -e /var/lib/llangvilla/firstboot.done 2>/dev/null; do
     waited=1
     if ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl is-failed --quiet llangvilla-firstboot.service 2>/dev/null; then
       firstboot_failed "The first-boot hook failed"
     fi
-    (( SECONDS < deadline )) || firstboot_failed "The first-boot hook did not finish within 40 minutes"
+    (( SECONDS < deadline )) || firstboot_failed "The first-boot hook did not finish within 25 minutes"
     sleep 10
   done
   ok "First-boot hook finished"
@@ -456,7 +474,8 @@ do_check() {
     "$(env_value ROOT_FS btrfs)" "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
     "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$(env_value CONFIG_REPO_URL)" "$(env_value LOCK_ROOT 1)"
   # shellcheck disable=SC2029  # expanding on the client side is the point
-  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
+  # Up to 5 minutes for systemd to settle, 1 for the login screen.
+  ssh_limit=600 ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
 fails=0
 pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
 fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
@@ -561,7 +580,7 @@ do_config() {
     ok "Copied"
 
     step "Applying the config (config/apply.sh --no-pull)"
-    vm_sudo "$apply" || die "config/apply.sh failed (output above)."
+    ssh_limit=2400 vm_sudo "$apply" || die "config/apply.sh failed (output above)."
     ok "Config applied"
   fi
   # shellcheck disable=SC2016  # $ expands on the VM
@@ -584,7 +603,7 @@ SH
 
   step "Applying it again: nothing should change"
   # --diff: a task that changes something shows exactly what.
-  out=$(vm_sudo "$apply -- --diff" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
+  out=$(ssh_limit=2400 vm_sudo "$apply -- --diff" 2>&1) || { printf '%s\n' "$out" >&2; die "The second run of config/apply.sh failed."; }
   if grep -Eq 'changed=[1-9]' <<<"$out"; then
     # Each changed task with its diff: from its TASK line to the next task.
     awk '/^TASK /{block=$0; keep=0; next} {block=block "\n" $0} /^changed:/{keep=1} keep && /^$/{print block; keep=0}' <<<"$out" >&2 || true
@@ -608,11 +627,11 @@ SH
   step "Checking the housekeeping timers and services"
   vm_sudo systemctl is-enabled --quiet paccache.timer llangvilla-nix-cleanup.timer llangvilla-firmware-check.timer \
     || die "A housekeeping timer is not enabled (paccache, llangvilla-nix-cleanup, llangvilla-firmware-check)."
-  vm_sudo systemctl start llangvilla-nix-cleanup.service \
+  ssh_limit=900 vm_sudo systemctl start llangvilla-nix-cleanup.service \
     || { vm_sudo journalctl -u llangvilla-nix-cleanup.service -b --no-pager -o cat >&2 || true; die "The Nix cleanup failed (journal above)."; }
   ok "Nix cleanup ran"
   # The VM has no updatable firmware, so the check must say so (it never fails its unit).
-  vm_sudo systemctl start llangvilla-firmware-check.service || die "The firmware check service failed."
+  ssh_limit=600 vm_sudo systemctl start llangvilla-firmware-check.service || die "The firmware check service failed."
   out=$(vm_sudo journalctl -u llangvilla-firmware-check.service -b --no-pager -o cat 2>&1 || true)
   grep -q '^No firmware updates\.$' <<<"$out" \
     || { printf '%s\n' "$out" >&2; die "The firmware check didn't run cleanly (journal above)."; }
@@ -620,7 +639,7 @@ SH
 
   step "Rebooting to check the result comes up"
   vm_reboot
-  sys_state=$(ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
+  sys_state=$(ssh_limit=420 ssh "${S[@]}" "$vm_user@127.0.0.1" timeout 300 systemctl is-system-running --wait 2>&1 || true)
   [[ $sys_state == running ]] || {
     ssh "${S[@]}" "$vm_user@127.0.0.1" systemctl --failed --no-pager >&2 || true
     die "After applying the config, systemd is '$sys_state' (failed units above)."
@@ -773,7 +792,7 @@ SH
   fi
 
   step "Re-applying with the session running (GTK files must not clash)"
-  vm_sudo "$apply" \
+  ssh_limit=2400 vm_sudo "$apply" \
     || die "Re-applying after a login failed (output above): a home-manager clash?"
   for f in "${gtk_files[@]}"; do
     ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || die "$f (in the home directory) is not home-manager's file after re-applying."

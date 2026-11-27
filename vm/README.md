@@ -143,4 +143,6 @@ All under `~/.cache/llangvilla/vm/`:
 | `The second run changed things` | A task isn't idempotent; the changed tasks are listed ([writing tasks](../config/README.md#writing-tasks)) |
 | `--firstboot is now the default` | The hook always runs on the working tree; use `--no-firstboot` to skip it |
 | `Could not serve the snapshot on port 8418` | Something else uses the port: set `VM_GIT_PORT` |
+| `An SSH command timed out after N s: …` | A command on the VM hung (or a step needs a longer limit: `ssh_limit=SECONDS` before the call in `vm/test-vm.sh`). Each SSH command has a limit, 5 minutes unless set longer (applies: 40), so a hang fails its step in minutes. Look around with `vm/test-vm.sh boot` |
+| `The first-boot hook did not finish within 25 minutes` | It's still running or stuck; its journal and the newest `apply.sh` log are shown above |
 | `The first-boot hook failed` | Its journal and the newest `apply.sh` log are shown above. Look around with `vm/test-vm.sh boot` |
