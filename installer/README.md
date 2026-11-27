@@ -5,22 +5,6 @@ Zero-touch Arch Linux installer on a Ventoy USB stick. Boot the stick and the ma
 > [!WARNING]
 > The installer erases the target disk. A disk that already holds data is never erased without someone typing `YES` at the console. The stick holds your Wi-Fi password and a password hash, so keep it physically safe.
 
-## Contents
-
-- [Quick start](#quick-start)
-- [How it works](#how-it-works)
-- [Requirements](#requirements)
-- [Building the stick](#building-the-stick)
-- [Installing](#installing)
-- [Configuration reference](#configuration-reference)
-- [First-boot hook](#first-boot-hook)
-- [Verifying an install](#verifying-an-install)
-- [Maintenance](#maintenance)
-- [Optional extras](#optional-extras)
-- [Troubleshooting](#troubleshooting)
-- [Security](#security)
-- [Limitations](#limitations)
-
 ## Quick start
 
 ```bash
@@ -308,7 +292,7 @@ journalctl -u llangvilla-firstboot.service -b       # first-boot hook output
 
 ### Snapshots
 
-The installer creates the `@.snapshots` subvolume, mounted at `/.snapshots`. The config fills it: `apply.sh` snapshots `/` before every upgrade ([config: Snapshots](../config/README.md#snapshots), which also has the rollback steps). The installer removes `subvolid=` from fstab so that a rolled-back `@` still mounts.
+The `@.snapshots` subvolume is mounted at `/.snapshots`; the config fills it before every upgrade ([config: Snapshots](../config/README.md#snapshots), with the rollback steps). fstab has no `subvolid=`, so a rolled-back `@` still mounts.
 
 ### Nvidia graphics
 

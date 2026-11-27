@@ -1,17 +1,5 @@
 # The one place the repo's checks are spelled out: CI (.github/workflows/lint.yml)
-# and the docs run these targets. `make lint` runs everything that needs no VM.
-#
-#   make lint            all the checks below
-#   make lint-shell      ShellCheck on every script
-#   make lint-env        the autoinstall.env template passes install.sh --check once
-#                        filled in, and is rejected as it is (placeholders left)
-#   make lint-yaml       yamllint
-#   make lint-ansible    ansible-lint and a playbook syntax check
-#   make lint-nix        nix flake check (builds the home configuration) and nixfmt
-#   make lint-docs       relative links and #section anchors in the Markdown files
-#   make fmt-nix         format the Nix files (what lint-nix checks)
-#   make vm              vm/test-vm.sh all: install, check and configure a VM
-#   make vm-config       vm/test-vm.sh config: re-apply config/ to the existing VM
+# and the docs run these targets. What each one checks: README.md, Development.
 #
 # The linters are pinned in .github/lint/requirements.txt:
 #   pip install -r .github/lint/requirements.txt

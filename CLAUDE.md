@@ -1,36 +1,26 @@
 # llangvilla
 
-Home-network config, currently focused on one machine: the Dell OptiPlex (inventory name `optiplex`, user `jack`). It runs **Arch Linux** with KDE Plasma; Arch is the only target. There is no app code or test suite; changes are shell scripts, YAML and docs.
+Home-network config for one machine: a Dell OptiPlex (inventory name `optiplex`) running **Arch Linux** with KDE Plasma; Arch is the only target. No app code or test suite: changes are shell scripts, YAML, Nix and docs.
 
-## Layout
+## Where things are
 
-Three separate parts, kept apart on purpose (root `README.md` has the flow):
+The root `README.md` has the overview, the layout and the `make` targets; each part's README is its full guide. Don't repeat them here.
 
-- `installer/` – **part 1, clean slate.** Zero-touch Arch installer. `README.md` is the full guide.
-  - `build-usb.sh` – host-side: builds the ISO in an `archlinux` Docker container, downloads Ventoy (pinned SHA-256), installs and populates the stick. Uses the sibling scripts when run from a checkout, GitHub `main` otherwise.
-  - `build.sh` – runs inside the container, builds the ISO with archiso and bakes in `install.sh`.
-  - `install.sh` – runs on the live ISO: validates config, partitions, `pacstrap`s and configures the system (user, Wi-Fi, SSH keys, systemd-boot, first-boot hook), powers off. `install.sh --check FILE` validates an env file anywhere (safe).
-  - `packages.txt` – the clean-slate base package list; copied onto the stick, not baked into the ISO. Apps go in the config instead.
-  - `autoinstall.env.example` – template for the stick's `autoinstall.env`, with double-underscore placeholders.
-- `config/` – **part 2, personalisation.** Live: re-applied on the box as it changes. `README.md` is the guide.
-  - `apply.sh` – the one entrypoint (first boot, re-runs, VM test): `git pull`, full `pacman -Syu` (skip with `--no-upgrade`), install Ansible if missing, run the playbook (which ends with home-manager).
-  - `assets/` – wallpaper source (`seafront.svg`) and a 3840×2160 render.
-  - `home/` – the user layer: a Nix flake for home-manager and plasma-manager (`flake.nix`, committed `flake.lock`, `home.nix`, `theme.json` (the look: theme names, fonts, wallpaper; also read by Ansible's `login_screen` role), `modules/`: the Mac-style Plasma layout, GTK, menus, git, shell). Applied by the `home_manager` role with a `path:` flake reference.
-  - `ansible/` – `site.yml` with roles `packages`, `mirrors` (reflector), `boot` (kernel command line), `firewall` (ufw), `theme` (Colloid, pinned commits), `login_screen` (PLM's look), `user_avatar`, `nix`, `housekeeping` (weekly timers), `home_manager` (last), each tagged with its own name; the machine's facts (user, keyboard, mirror countries) in `config/home/host.json`; own `ansible.cfg` and `inventory.ini` (`ansible_connection=local`).
-- `vm/` – **part 3, try it.** `test-vm.sh` installs into a QEMU/OVMF VM from a generated test stick, runs the real first-boot hook against a snapshot of the working tree (served to the VM over HTTP), checks the base over SSH, then re-applies the config and checks what it produced; `config` alone iterates on config changes; `boot`/`live`/`ssh` for poking around. Uses the working tree's `install.sh`, `packages.txt` and `config/` (no ISO rebuild). `README.md` is the guide.
-- `.github/workflows/lint.yml` – shellcheck on all scripts, `install.sh --check` on the template, yamllint, ansible-lint, a playbook syntax check, and for `config/home`: `nix flake check`, nixfmt and a build of the home configuration.
-- `docs/` – `maintenance.md` (routine tasks, dependency bumps) and `decisions.md` (what was decided and why; add an entry when a decision changes how the repo works). `Makefile` – every check (`make lint`, `make vm`).
+- `installer/` – part 1: the zero-touch installer (`build-usb.sh`, `build.sh`, `install.sh`, `packages.txt`, `autoinstall.env.example`).
+- `config/` – part 2: `apply.sh`, the Ansible playbook (`config/ansible`), the home-manager flake (`config/home`, with `theme.json` for the look and `host.json` for the machine's facts, both read by Nix and Ansible).
+- `vm/` – part 3: `test-vm.sh`, the QEMU test of both.
+- `docs/` – `design.md` (what the machine should be), `decisions.md` (what was decided and why), `maintenance.md` (routine tasks, dependency bumps, recovery).
+- `.github/` – CI (lint on every push; the VM test on PRs that touch `installer/`, `config/` or `vm/`, weekly and on demand), Dependabot, the upstream check.
 - The to-do list is GitHub issues (no `TODO.md`).
-- `.github/workflows/vm-test.yml` – builds the ISO and runs `vm/test-vm.sh all` with KVM (weekly, Mondays, and manual).
-- Dependency bumps: `.github/dependabot.yml` (GitHub Actions, the pinned linters in `.github/lint/requirements.txt`, and `config/home/flake.lock`), weekly; `dependabot-automerge.yml` merges Actions and linter bumps once lint passes and starts the VM test on Nix bumps (merged by a person). `upstream-check.yml` runs `.github/scripts/upstream-check.sh` weekly and opens an issue for newer Colloid or Ventoy releases (Dependabot can't watch those pins).
 
 The only link between parts 1 and 2 is the first-boot hook: the installer clones the repo to `/opt/llangvilla` and runs `CONFIG_ENTRYPOINT` (`config/apply.sh`). Keep it that way: the installer must not know about Ansible, and the config must not assume installer settings.
 
 ## Working here
 
-- Lint before pushing: `make lint` (or one target: `lint-shell`, `lint-env`, `lint-yaml`, `lint-ansible`, `lint-nix`, `lint-docs`; the `Makefile` is the one copy of the commands, and CI calls the same targets). Install the linters at CI's versions with `pip install -r .github/lint/requirements.txt` (the full `ansible` package provides `community.general`, since Galaxy may be unreachable). Nix is preinstalled in the cloud container; `make lint-nix` uses a `path:` flake reference, so new, untracked files count.
-- Don't run the playbook or `config/apply.sh` (`--syntax-check` is fine), `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `vm/test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks; use the VM workflow.
-- Test installer or base package changes with `vm/test-vm.sh`, config changes with `vm/test-vm.sh config` (`vm/README.md`).
+- Lint before pushing: `make lint` (or one target; the `Makefile` is the one copy of the commands, and CI calls the same targets). Install the linters at CI's versions with `pip install -r .github/lint/requirements.txt` (the full `ansible` package provides `community.general`, since Galaxy may be unreachable). Nix is preinstalled in the cloud container; `make lint-nix` uses a `path:` flake reference, so new, untracked files count.
+- Don't run the playbook or `config/apply.sh` (`--syntax-check` is fine), `build-usb.sh` against a disk, or `install.sh` (except `--check`) here. They modify the host, and the installer wipes disks. `vm/test-vm.sh` only touches `~/.cache/llangvilla/vm`, but a real install needs KVM and Arch mirrors, which the cloud container lacks: push and let the VM workflow run on the PR.
 - Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. Keep the placeholders.
-- The config's first run is before login: never restart the display manager (`plasmalogin`) or reboot from it (see `config/README.md`, Writing tasks).
+- The config's first run is before login: never restart the display manager (`plasmalogin`) or reboot from it, and don't need a desktop session (`config/README.md`, Writing tasks).
+- Removing something takes an explicit `state: absent` or `packages_remove` (`config/README.md`, Removing things).
 - Scripts use `set -euo pipefail` (`install.sh` uses `-uo`, deliberately, so failures drop to a shell). Keep that style.
+- Add an entry to `docs/decisions.md` when a decision changes how the repo works; open questions go in issues.

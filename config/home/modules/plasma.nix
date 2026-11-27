@@ -1,4 +1,4 @@
-# The desktop: Colloid dark laid out like macOS (config design doc, "The look").
+# The desktop: Colloid dark laid out like macOS (docs/design.md, "The look").
 # The theme files are installed system-wide by Ansible's theme role; this module
 # only selects them, by the names in ../theme.json (shared with Ansible's
 # login_screen role). overrideConfig: the repo always wins, and changes made in

@@ -2,7 +2,7 @@
 
 What was decided about how this repo works, and why. Newest last. When a decision changes, add an entry that says which one it replaces; don't rewrite history. The details live in the linked PRs and issues; the docs say how things work today.
 
-Entries 1–19 come from the holistic review of November 2026.
+Entries 1–19 come from the holistic review of November 2026; 20–25 from its follow-up.
 
 ## 1. One repository, three parts
 
@@ -115,3 +115,39 @@ Entries 1–19 come from the holistic review of November 2026.
 ## 19. Open: upgrading Ventoy on an existing stick
 
 **Not decided yet.** Today `build-usb.sh` keeps whatever Ventoy a stick already has, so a newer pinned Ventoy only reaches new sticks, or ones rebuilt with `--force` (which wipes them). Ventoy's own non-destructive update (`Ventoy2Disk.sh -u`) could become an `--update-ventoy` option.
+
+## 20. The VM test runs on pull requests
+
+**Decision:** `vm-test.yml` runs on every PR that touches `installer/`, `config/` or `vm/`, Dependabot's Nix bumps included, as well as weekly and on demand ([#38](https://github.com/cqkh42/llangvilla/issues/38)). Replaces the "start it on the branch" step of 15 for Nix bumps.
+
+**Why:** lint was the only automatic check, and every VM run had been started by hand. Twenty minutes on a free runner is cheap next to a broken first boot.
+
+## 21. One installer path: btrfs, first boot before the login screen
+
+**Decision:** `ROOT_FS=ext4` and `FIRSTBOOT_BEFORE_LOGIN=0` are gone ([#44](https://github.com/cqkh42/llangvilla/issues/44)).
+
+**Why:** neither was ever tested. Snapshots before upgrades (10) need btrfs, and a background first boot combined with its reboot could restart the machine mid-session. One tested path beats two untested options.
+
+## 22. One file for the machine's facts
+
+**Decision:** the login user, keyboard layout and mirror countries live in `config/home/host.json`, read by Nix and Ansible, beside `theme.json` (8). `host_vars` is gone ([#40](https://github.com/cqkh42/llangvilla/issues/40)). The installer's `autoinstall.env` keeps its own copy (1).
+
+**Why:** the user name alone was in five places that had to agree.
+
+## 23. Removing things is explicit
+
+**Decision:** `packages_remove` for packages; a `state: absent` task, kept until the machine has applied it, for a role's files. The theme role clears old files when a pin changes. App-like packages moved from the base to the config, where they can be removed ([#43](https://github.com/cqkh42/llangvilla/issues/43)).
+
+**Why:** Ansible only converges on what it mentions; a package taken out of a list stayed installed for good, and anything in the base stayed until a reinstall.
+
+## 24. Notices: in the login message and on the desktop
+
+**Decision:** checks that find something write `/etc/motd.d/llangvilla-*`; an autostart entry from home-manager shows each one as a notification at desktop login. New checks: disk health weekly (SMART, btrfs errors, the monthly scrub) and an apply reminder after 14 days. `apply.sh` prints the Arch news since the last upgrade before upgrading ([#41](https://github.com/cqkh42/llangvilla/issues/41), [#42](https://github.com/cqkh42/llangvilla/issues/42)).
+
+**Why:** the login message only shows over SSH and on the console, so on a desktop the firmware notice went unseen. With no backups yet (17), a failing disk needs saying early; and upgrades happen only when `apply.sh` is run, so it needs a nudge and the news that may need a manual step.
+
+## 25. Docs: one home per fact; open questions are issues
+
+**Decision:** each fact is described in one place and linked from the others; `CLAUDE.md` holds only what an agent needs beyond the READMEs; the design lives in `docs/design.md`, not on claude.ai. This log holds decisions only: open questions and parked work are issues. Entries 17–19 are tracked as [#20](https://github.com/cqkh42/llangvilla/issues/20), [#29](https://github.com/cqkh42/llangvilla/issues/29) and [#46](https://github.com/cqkh42/llangvilla/issues/46) ([#45](https://github.com/cqkh42/llangvilla/issues/45)).
+
+**Why:** the role list, the `make` targets and the first-boot hook were each written out in three or four places that drifted; the design doc was outside the repo, so code comments pointed at nothing a reader could open.

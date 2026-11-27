@@ -107,6 +107,17 @@ The result checks read their expected values from `config/home/theme.json` and t
 
 The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
 
+## What the VM can't test
+
+The VM is wired, virtual and has no real firmware, so a pass here doesn't cover the hardware ([#37](https://github.com/cqkh42/llangvilla/issues/37) is the checklist for the first real install):
+
+- **Wi-Fi**: the live installer's `iwctl` path, and the installed system actually connecting (only the profile file is checked).
+- **The machine's firmware**: Ventoy booting on it, `bootctl` creating a firmware boot entry, fwupd finding real updates.
+- **The prompts**: the test stick skips the countdown and erases a blank disk; the `YES` prompt for a disk with data is never shown.
+- **A pinned `TARGET_DISK`**: the test uses `auto`.
+- **Real hardware under Plasma**: the GPU at the monitor's resolution, audio, Bluetooth, SMART on a real disk.
+- **Timing**: first boot's Nix download on a home connection.
+
 ## Workflows
 
 | Change | Run |
@@ -130,7 +141,7 @@ All under `~/.cache/llangvilla/vm/`:
 
 ## CI
 
-`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs every Monday, to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
+`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs on every pull request that touches `installer/`, `config/` or `vm/` (Dependabot's Nix bumps included), every Monday to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
 
 ## Troubleshooting
 
