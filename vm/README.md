@@ -98,11 +98,14 @@ It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/s
 In `all`, the first-boot hook has already applied the config, so the config phase starts at step 3 and re-applies `/opt/llangvilla`. Run on its own (`vm/test-vm.sh config`, the quick loop on an existing install), it starts at step 1:
 
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
-2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, or if no log appears in `/var/log/llangvilla/`.
-3. Runs it again and fails if any task reports a change.
-4. Reboots and checks that systemd reports `running`, everything the config sets is in place (below), the display manager is active and `zswap.enabled=0` is on the kernel command line, then saves a screenshot of the login screen.
+2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, if no log appears in `/var/log/llangvilla/`, or if `reflector.timer`, `base-devel`, `man-db` or `man-pages` are missing.
+3. Runs it again and fails if any task reports a change. Before this run it adds three fake old snapshots, and afterwards checks that only the newest 3 `before-upgrade-*` snapshots are left, all read-only.
+4. Reboots and checks that systemd reports `running`, everything the config sets is in place (below), the display manager is active, `zswap.enabled=0` is on the kernel command line and the firewall is on (incoming blocked, SSH rate-limited), then saves a screenshot of the login screen.
+5. Logs in through a **test-only autologin** (a drop-in in `/etc/plasmalogin.conf.d/` written by the test, never part of `config/`), waits for Plasma, saves a screenshot of the desktop and checks the colour scheme from `config/home/theme.json` was applied at login. It reports whether Plasma replaced home-manager's GTK files, then re-applies with the session running and fails if home-manager clashes or the GTK files aren't its own again. The autologin is removed at the end.
 
-The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, `gb` keyboard, window buttons and decoration, fonts, menu bars off, the GTK settings). Settings Plasma applies only at login aren't checked here.
+The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, `gb` keyboard, window buttons and decoration, fonts, menu bars off, the GTK settings). Settings Plasma applies only at login are checked in step 5.
+
+The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
 
 ## Workflows
 

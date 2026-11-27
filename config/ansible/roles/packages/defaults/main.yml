@@ -10,6 +10,10 @@ packages_install:
   - vim
   - htop
   - btop
+  - man-db
+  - man-pages
+  # compilers and makepkg, for building packages (e.g. from the AUR) by hand
+  - base-devel
   # fonts: Inter for the interface, JetBrains Mono (Nerd Font) for terminals
   - inter-font
   - ttf-jetbrains-mono-nerd
