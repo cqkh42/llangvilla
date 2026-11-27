@@ -2,7 +2,7 @@
 
 Personalises an installed machine: apps, fonts, the Colloid theme, the login screen's look, the avatar and system tweaks. It runs once on first boot through the installer's [first-boot hook](../installer/README.md#first-boot-hook), then again whenever the config changes. No USB stick or reinstall is needed.
 
-It is an Ansible playbook behind a single entrypoint, `apply.sh`. Ansible owns the system; its last role runs Nix home-manager, which owns the user's home (dotfiles, and later the Plasma layout). See [User layer](#user-layer).
+It is an Ansible playbook behind a single entrypoint, `apply.sh`. Ansible owns the system; its last role runs Nix home-manager, which owns the user's home: the Plasma layout and settings, GTK, git and the shell. See [User layer](#user-layer).
 
 ## Quick start
 
@@ -16,8 +16,8 @@ sudo /opt/llangvilla/config/apply.sh --no-upgrade -- --check --diff  # dry run
 Before pushing a change, from a checkout:
 
 ```bash
-yamllint . && ansible-lint config/ansible
-vm/test-vm.sh config                                    # apply the working tree to the test VM
+make lint-yaml lint-ansible lint-nix                    # the checks CI runs on config/
+make vm-config                                          # apply the working tree to the test VM
 ```
 
 ## Usage
@@ -144,11 +144,11 @@ What goes where:
 | pacman (Ansible) | GUI apps, themes, fonts, anything that plugs into Plasma or Qt | Nix GUI apps need nixGL on Arch; Nix Qt plugins can't load into Arch's Qt; system users (the login screen) can't see the Nix profile |
 | Nix (home-manager) | Dotfiles, settings, command-line tools | Declarative, pinned, roll back with `home-manager generations` |
 
-To add something, add a module under `modules/` and import it from `home.nix`. Check it with `nix flake check ./config/home` and `nix build ./config/home#homeConfigurations.jack.activationPackage`, format with `git ls-files -z 'config/home/*.nix' | xargs -0 nix run ./config/home#formatter.x86_64-linux --` (CI runs all three), then `vm/test-vm.sh config`.
+To add something, add a module under `modules/` and import it from `home.nix`. Check it with `make lint-nix` (flake check, nixfmt, build; CI runs the same), format it with `make fmt-nix`, then `make vm-config`.
 
 ## Themes
 
-The `theme` role installs Colloid dark into `/usr/share`, so the login screen, which runs as a system user, can use it as well. Choosing it for your own session is the user layer's job (home-manager, later).
+The `theme` role installs Colloid dark into `/usr/share`, so the login screen, which runs as a system user, can use it as well. Choosing it for your own session is the user layer's job (`config/home/modules/plasma.nix` and `gtk.nix`).
 
 | Part | From | Installed as |
 |---|---|---|
@@ -158,9 +158,9 @@ The `theme` role installs Colloid dark into `/usr/share`, so the login screen, w
 
 Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in one place, `config/home/theme.json`: the login screen (`login_screen` role) and the desktop and GTK apps (`plasma.nix`, `gtk.nix`) all read it, so they can't drift apart. It lives in `config/home` because the Nix flake can only read files inside its own directory.
 
-Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply. The weekly upstream check opens an issue with the commit to paste when there's a newer one ([dependency bumps](../README.md#dependency-bumps)).
+Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply. The weekly upstream check opens an issue with the commit to paste when there's a newer one ([dependency bumps](../docs/maintenance.md#dependency-bumps)).
 
-The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so apply the look-and-feel's parts individually (home-manager will), not the whole package.
+The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so `plasma.nix` applies the look-and-feel's parts individually, not the whole package.
 
 ## Snapshots
 
@@ -240,7 +240,7 @@ The first run happens before the login screen starts, and every run is as root. 
 ## Making a change
 
 1. Edit the role, or add one and list it in `site.yml`.
-2. Lint: `yamllint .` and `ansible-lint config/ansible`. CI also runs `ansible-playbook --syntax-check`.
+2. Lint: `make lint-yaml lint-ansible` (and `make lint-nix` for `config/home`), as CI does.
 3. Test against the working tree: `vm/test-vm.sh config`, then `vm/test-vm.sh boot` to look at it ([vm](../vm/README.md)).
 4. Commit and push, then run `sudo /opt/llangvilla/config/apply.sh` on the machine.
 

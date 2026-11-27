@@ -9,7 +9,7 @@ The repository has three independent parts:
 | Part | Directory | Purpose | Runs |
 |---|---|---|---|
 | Installer | [`installer/`](installer/README.md) | Ventoy USB stick that wipes the machine and installs a clean base system | On a reinstall |
-| Config | [`config/`](config/README.md) | Personalises the installed system: apps, theming, settings (Ansible; Nix home-manager planned) | On first boot, then whenever the config changes |
+| Config | [`config/`](config/README.md) | Personalises the installed system: apps, theming, settings. Ansible for the system, then Nix home-manager for the user's home | On first boot, then whenever the config changes |
 | VM | [`vm/`](vm/README.md) | Runs the installer and the config from the working tree in a QEMU VM | Before changes reach the real machine |
 
 ```mermaid
@@ -18,7 +18,7 @@ flowchart LR
         A[build-usb.sh] --> B[USB stick] --> C[install.sh] --> D[base system]
     end
     subgraph config["config/"]
-        E[apply.sh] --> F[Ansible playbook]
+        E[apply.sh] --> F[Ansible playbook] --> I[home-manager]
     end
     D -- "first-boot hook<br/>(clone + run once)" --> E
     G([manual re-run]) --> E
@@ -57,12 +57,15 @@ vm/test-vm.sh boot       # open the VM in a window
 
 ```
 .
-├── installer/             Installer: ISO build, USB stick, install.sh, base package list
-├── config/                Config: apply.sh entrypoint and the Ansible playbook
-│   └── ansible/
-├── vm/                    VM test harness
-└── .github/workflows/     CI: lint (every push) and VM test (weekly + manual)
+├── installer/        part 1: ISO build, USB stick, install.sh, base package list
+├── config/           part 2: apply.sh, the Ansible playbook, the home-manager flake
+├── vm/               part 3: the VM test
+├── docs/             maintenance.md (routine tasks), decisions.md (what was decided, and why)
+├── Makefile          every check: make lint, make vm
+└── .github/          CI (lint on every push, VM test weekly), Dependabot, upstream check
 ```
+
+Each part's README has its own layout: [installer](installer/README.md#how-it-works), [config](config/README.md#layout), [vm](vm/README.md).
 
 ## How the parts connect
 
@@ -80,25 +83,18 @@ Rules that keep the parts independent:
 
 ## Development
 
-| Check | Command | CI |
-|---|---|---|
-| Shell scripts | `shellcheck installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh` | `lint.yml`, every push |
-| Env template | `installer/install.sh --check FILE` | `lint.yml` |
-| YAML | `yamllint .` | `lint.yml` |
-| Ansible | `ansible-lint config/ansible` | `lint.yml` |
-| End to end | `vm/test-vm.sh all` | `vm-test.yml`, weekly and manual (Actions tab) |
+All checks are `make` targets, used by CI too (`.github/workflows/lint.yml`):
 
-Install the linters, at the versions CI uses, with `pip install -r .github/lint/requirements.txt`.
+| Target | Checks |
+|---|---|
+| `make lint` | Everything below that needs no VM |
+| `make lint-shell` | ShellCheck on every script |
+| `make lint-env` | The `autoinstall.env` template passes `install.sh --check` once filled in, and is rejected as it is |
+| `make lint-yaml`, `make lint-ansible` | yamllint; ansible-lint and a playbook syntax check |
+| `make lint-nix` | `nix flake check`, nixfmt and a build of the home configuration (`make fmt-nix` formats) |
+| `make lint-docs` | Relative links and `#section` anchors in the Markdown files |
+| `make vm`, `make vm-config` | The VM test: everything, or re-apply `config/` to the existing test VM ([vm](vm/README.md)). CI runs it weekly and on demand |
 
-### Dependency bumps
-
-| Dependency | Bumped by | Merged |
-|---|---|---|
-| GitHub Actions | Dependabot, weekly | Automatically, once lint passes |
-| The linters (`.github/lint/requirements.txt`) | Dependabot, weekly | Automatically, once lint passes |
-| nixpkgs, home-manager, plasma-manager (`config/home/flake.lock`) | Dependabot, weekly; the VM test starts on the PR's branch by itself | By you, once the VM test is green |
-| Colloid themes (`config/ansible/roles/theme/defaults/main.yml`) | `upstream-check.yml` opens an issue with the new commit, weekly | By hand: paste the commit, run the VM test |
-| Ventoy (`installer/build-usb.sh`) | `upstream-check.yml` opens an issue with the new version and its checked SHA-256, weekly | By hand: paste both, rebuild a stick |
-| Arch packages, the ISO's `archlinux` image | Not pinned (rolling) | The weekly VM test catches breakage; snapshots before each upgrade are the undo |
+Install the linters, at the versions CI uses, with `pip install -r .github/lint/requirements.txt`. Dependencies are bumped by Dependabot and a weekly upstream check ([maintenance: dependency bumps](docs/maintenance.md#dependency-bumps)).
 
 Never commit real Wi-Fi credentials, password hashes or a filled-in `autoinstall.env`. They live only on the USB stick (see [Security](installer/README.md#security)).
