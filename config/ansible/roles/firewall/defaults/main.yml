@@ -1,0 +1,4 @@
+---
+# SSH's port. Rate-limited: ufw blocks an address for a while after 6 connections
+# in 30 seconds (key-only login makes guessing pointless, this stops the noise).
+firewall_ssh_port: "22"

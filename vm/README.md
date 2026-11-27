@@ -93,8 +93,10 @@ It also saves a screenshot of the login screen to `~/.cache/llangvilla/vm/logs/s
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
 2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, or if no log appears in `/var/log/llangvilla/`.
 3. Runs it again and fails if any task reports a change. Before this run it adds three fake old snapshots, and afterwards checks that only the newest 3 `before-upgrade-*` snapshots are left, all read-only.
-4. Reboots and checks that systemd reports `running`, the display manager is active and `zswap.enabled=0` is on the kernel command line, then saves a screenshot of the login screen.
+4. Reboots and checks that systemd reports `running`, the display manager is active, `zswap.enabled=0` is on the kernel command line and the firewall is on (incoming blocked, SSH rate-limited), then saves a screenshot of the login screen.
 5. Logs in through a **test-only autologin** (a drop-in in `/etc/plasmalogin.conf.d/` written by the test, never part of `config/`), waits for Plasma, saves a screenshot of the desktop and checks the colour scheme from `config/home/theme.json` was applied at login. It reports whether Plasma replaced home-manager's GTK files, then re-applies with the session running and fails if home-manager clashes or the GTK files aren't its own again. The autologin is removed at the end.
+
+The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
 
 ## Workflows
 

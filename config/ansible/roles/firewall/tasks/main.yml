@@ -1,0 +1,37 @@
+---
+# ufw: incoming traffic blocked, outgoing allowed, SSH allowed and rate-limited.
+# A role that adds a listening service (mDNS, printing, ...) opens its own port
+# with community.general.ufw. Safe at first boot: no desktop session needed, and
+# the SSH rule is in place before ufw is turned on, so SSH never drops.
+- name: Install ufw and its settings page (System Settings, Firewall)
+  community.general.pacman:
+    name: [ufw, plasma-firewall]
+    state: present
+
+- name: Allow SSH, rate-limited
+  community.general.ufw:
+    rule: limit
+    port: "{{ firewall_ssh_port }}"
+    proto: tcp
+    comment: SSH (config/ansible, firewall role)
+
+- name: Block incoming and allow outgoing traffic by default
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    default: "{{ item.policy }}"
+  loop:
+    - {direction: incoming, policy: deny}
+    - {direction: outgoing, policy: allow}
+  loop_control:
+    label: "{{ item.direction }}: {{ item.policy }}"
+
+- name: Turn ufw on
+  community.general.ufw:
+    state: enabled
+
+# ufw.service loads the rules at boot.
+- name: Load the firewall at every boot
+  ansible.builtin.systemd_service:
+    name: ufw.service
+    enabled: true
+    state: started
