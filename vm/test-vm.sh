@@ -529,9 +529,12 @@ do_config() {
   ok "apply.sh logged to /var/log/llangvilla/"
 
   # Three fake old snapshots, so the second run's pruning (newest 3 kept) has work to do.
+  # How many real ones exist already depends on the mode (first boot, then maybe a
+  # test apply) and on earlier runs on a reused VM, so record the list for the check.
   vm_root_sh <<'SH' || die "Could not add fake old snapshots to /.snapshots."
 set -e
 for i in 1 2 3; do btrfs subvolume snapshot -r / "/.snapshots/before-upgrade-20000101-00000$i" >/dev/null; done
+printf '%s\n' /.snapshots/before-upgrade-* >/run/llangvilla-test-snapshots
 SH
 
   step "Applying it again: nothing should change"
@@ -551,12 +554,16 @@ SH
   if grep -Eq 'changed=[1-9]' <<<"$out"; then printf '%s\n' "$out" >&2; die "The dry run reports changes right after a clean run."; fi
   ok "Dry run: no changes, user layer built"
 
-  # Two real snapshots (one per run) plus three fakes: the two oldest fakes must be gone.
+  # The second run took one more snapshot (the dry run takes none), then pruned: of the
+  # snapshots before it plus that one, exactly the newest 3 must be left.
   vm_root_sh <<'SH' || die "Snapshots before upgrades are wrong (above)."
 snaps=(/.snapshots/before-upgrade-*)
 printf '  %s\n' "${snaps[@]}"
+mapfile -t before </run/llangvilla-test-snapshots
 [[ ${#snaps[@]} == 3 ]] || { echo "expected the newest 3 snapshots, found ${#snaps[@]}"; exit 1; }
-[[ ${snaps[0]} == */before-upgrade-20000101-000003 ]] || { echo "the oldest snapshots were not the ones deleted"; exit 1; }
+[[ " ${before[*]} " != *" ${snaps[2]} "* ]] || { echo "the second run took no new snapshot"; exit 1; }
+mapfile -t want < <(printf '%s\n' "${before[@]}" "${snaps[2]}" | sort | tail -n 3)
+[[ ${snaps[*]} == "${want[*]}" ]] || { echo "the oldest snapshots were not the ones deleted (expected: ${want[*]})"; exit 1; }
 for s in "${snaps[@]}"; do
   [[ $(btrfs property get -ts "$s" ro) == ro=true ]] || { echo "$s is not read-only"; exit 1; }
 done
