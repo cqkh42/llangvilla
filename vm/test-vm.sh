@@ -679,7 +679,9 @@ timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E '
 test -f /usr/share/wayland-sessions/plasma.desktop
 mkdir -p ${dropin%/*}
 printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
-# A notice, for notices.nix to show at login.
+# A notice, for notices.nix to show at login. /etc/motd.d only exists once a check
+# has written one (they mkdir it themselves), so make it here too.
+mkdir -p /etc/motd.d
 printf 'VM test notice: shown at desktop login.\n' > /etc/motd.d/llangvilla-vmtest
 SH
   vm_reboot
