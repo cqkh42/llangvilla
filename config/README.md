@@ -87,6 +87,7 @@ config/
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
         ├── packages/              apps, tools and fonts
+        ├── mirrors/               reflector: UK HTTPS mirrors, refreshed weekly
         ├── boot/                  kernel command line of every boot entry (zswap off)
         ├── firewall/              ufw: incoming blocked, outgoing allowed, SSH rate-limited
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
@@ -102,7 +103,8 @@ config/
 |---|---|---|---|
 | `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
 | `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
-| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, man-db, man-pages, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `[GB]`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
