@@ -29,6 +29,12 @@ set -euo pipefail
 # from being captured by an `eval "$(...)"` wrapper.
 exec 3>&1 1>&2
 
+# Everything up to the final result runs with fd 3 closed, so no child inherits
+# it. `eval "$(...)"` waits until every copy of the real stdout is closed, so a
+# child that leaves a process running (a helper, an agent, a daemon) would
+# otherwise hang the caller's shell after "All done".
+{
+
 # Ventoy publishes its SHA-256 in the release notes, so it is pinned here.
 # To upgrade: bump the version and paste the new linux.tar.gz hash from
 # https://github.com/ventoy/Ventoy/releases. The weekly upstream check
@@ -469,6 +475,8 @@ elif [[ -z "$DISK" ]]; then
   info "To build the stick, re-run with a disk. Find it with:"
   info "  lsblk -d -p -o NAME,SIZE,MODEL,TRAN --filter 'TRAN==\"usb\"'"
 fi
+
+} 3>&-
 
 printf 'ISO=%q\nVENTOY_DIR=%q\n' "$ISO" "$VENTOY_DIR" >&3
 if [[ -n "$VENTOY_MOUNT" ]]; then printf 'V=%q\n' "$VENTOY_MOUNT" >&3; fi
