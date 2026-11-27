@@ -60,20 +60,16 @@ vm/test-vm.sh boot       # open the VM in a window
 ├── installer/        part 1: ISO build, USB stick, install.sh, base package list
 ├── config/           part 2: apply.sh, the Ansible playbook, the home-manager flake
 ├── vm/               part 3: the VM test
-├── docs/             maintenance.md (routine tasks), decisions.md (what was decided, and why)
+├── docs/             design.md (what it should be), decisions.md (what was decided, and why), maintenance.md (routine tasks, recovery)
 ├── Makefile          every check: make lint, make vm
-└── .github/          CI (lint on every push, VM test weekly), Dependabot, upstream check
+└── .github/          CI (lint on every push; VM test on PRs, weekly), Dependabot, upstream check
 ```
 
 Each part's README has its own layout: [installer](installer/README.md#how-it-works), [config](config/README.md#layout), [vm](vm/README.md).
 
 ## How the parts connect
 
-The installer and the config share one interface, the **first-boot hook**:
-
-1. The installer writes a systemd unit, `llangvilla-firstboot.service`, into the new system.
-2. On first boot the unit clones this repository to `/opt/llangvilla` and runs `config/apply.sh` once, before the login screen starts.
-3. After that the installer is out of the picture. The checkout stays at `/opt/llangvilla`, and `apply.sh` is re-run by hand.
+The installer and the config share one interface, the **[first-boot hook](installer/README.md#first-boot-hook)**: on first boot the new system clones this repository to `/opt/llangvilla` and runs `config/apply.sh` once, before the login screen starts. After that the installer is out of the picture; the checkout stays, and `apply.sh` is re-run by hand.
 
 Rules that keep the parts independent:
 
@@ -83,17 +79,18 @@ Rules that keep the parts independent:
 
 ## Development
 
-All checks are `make` targets, used by CI too (`.github/workflows/lint.yml`):
+All checks are `make` targets, used by CI too (`.github/workflows/lint.yml`). This table is their reference:
 
 | Target | Checks |
 |---|---|
 | `make lint` | Everything below that needs no VM |
-| `make lint-shell` | ShellCheck on every script |
+| `make lint-shell` | ShellCheck on every script, including the Ansible roles' scripts and the first-boot script `install.sh` writes |
 | `make lint-env` | The `autoinstall.env` template passes `install.sh --check` once filled in, and is rejected as it is |
 | `make lint-yaml`, `make lint-ansible` | yamllint; ansible-lint and a playbook syntax check |
-| `make lint-nix` | `nix flake check`, nixfmt and a build of the home configuration (`make fmt-nix` formats) |
+| `make lint-nix` | `nix flake check` (which builds the home configuration) and nixfmt |
 | `make lint-docs` | Relative links and `#section` anchors in the Markdown files |
-| `make vm`, `make vm-config` | The VM test: everything, or re-apply `config/` to the existing test VM ([vm](vm/README.md)). CI runs it weekly and on demand |
+| `make vm`, `make vm-config` | The VM test: everything, or re-apply `config/` to the existing test VM ([vm](vm/README.md)). CI runs it on PRs that touch `installer/`, `config/` or `vm/`, weekly and on demand |
+| `make fmt-nix` | Formats the Nix files (what `lint-nix` checks) |
 
 Install the linters, at the versions CI uses, with `pip install -r .github/lint/requirements.txt`. Dependencies are bumped by Dependabot and a weekly upstream check ([maintenance: dependency bumps](docs/maintenance.md#dependency-bumps)).
 

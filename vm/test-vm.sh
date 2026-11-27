@@ -91,8 +91,6 @@ while [[ $# -gt 0 ]]; do
     --iso)       iso=$2; shift ;;
     --env)       base_env=$2; shift ;;
     --no-firstboot) firstboot=0 ;;
-    --firstboot) die "--firstboot is now the default, and uses the working tree (not GitHub). Use --no-firstboot to skip the hook." ;;
-    --ansible)   die "--ansible was replaced by the first-boot hook (the default) and the 'config' command" ;;
     --baked)     baked=1 ;;
     --stick)     stick_dev=$2; shift ;;
     --gui)       gui=1 ;;
@@ -469,78 +467,13 @@ do_check() {
 
   step "Checking the base system"
   # Expected values go in as environment variables; the checks run on the VM.
-  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_FS=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_FIRSTBOOT=%q EXP_LOCK_ROOT=%q bash -s' \
+  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_FIRSTBOOT=%q EXP_LOCK_ROOT=%q bash -s' \
     "$test_password" "$(env_value HOST_NAME)" "$vm_user" "$(env_value REAL_NAME)" \
-    "$(env_value ROOT_FS btrfs)" "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
+    "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
     "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$(env_value CONFIG_REPO_URL)" "$(env_value LOCK_ROOT 1)"
   # shellcheck disable=SC2029  # expanding on the client side is the point
   # Up to 5 minutes for systemd to settle, 1 for the login screen.
-  ssh_limit=600 ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
-fails=0
-pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
-fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
-# </dev/null: this script arrives on stdin, so no check may read from it.
-check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-failed}"; fi; }
-s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-root_locked()  { s passwd -S root | awk '{exit $2 != "L"}'; }
-# On failure, show what sshd decided and which files set it.
-sshd_no_pw() {
-  s sshd -T | grep -qix 'passwordauthentication no' && return 0   # OpenSSH 10 prints CamelCase
-  s sshd -T 2>&1 | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|usepam) '
-  s grep -HnEi '^[[:space:]]*(include|passwordauthentication|kbdinteractiveauthentication|usepam|match)' \
-    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
-  return 1
-}
-wifi_profile() { [[ $(s stat -c %a /etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection) == 600 ]]; }
-# Any display manager registers its login screen with logind as a "greeter" session.
-greeter_session() {
-  local i id
-  for i in $(seq 1 30); do
-    for id in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
-      [[ $(loginctl show-session "$id" -p Class --value) == greeter ]] && return 0
-    done
-    sleep 2
-  done
-  echo "no greeter session after 60 s"; return 1
-}
-
-state=$(timeout 300 systemctl is-system-running --wait 2>&1 </dev/null)
-if [[ $state == running ]]; then pass "systemd: running, no failed units"
-else fail "systemd" "$state; failed: $(systemctl --failed --no-legend --plain | awk '{print $1}' | xargs)"; fi
-check "sudo works for $EXP_USER"   s true
-check "hostname is $EXP_HOST"      test "$(cat /etc/hostname)" = "$EXP_HOST"
-check "full name is '$EXP_REAL'"   test "$(getent passwd "$EXP_USER" | cut -d: -f5)" = "$EXP_REAL"
-check "root fs is $EXP_FS"         test "$(findmnt -no FSTYPE /)" = "$EXP_FS"
-if [[ $EXP_FS == btrfs ]]; then
-  check "/ is subvolume @"         bash -c 'findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"'
-  for m in /home /var/log /var/cache/pacman/pkg /.snapshots; do check "$m is mounted" findmnt -n "$m"; done
-  check "fstab has no subvolid="   bash -c '! grep -q subvolid= /etc/fstab'
-fi
-check "/boot is the vfat ESP"      test "$(findmnt -no FSTYPE /boot)" = vfat
-check "systemd-boot is installed"  s bootctl is-installed
-for k in $EXP_KERNELS; do
-  check "boot entry for $k"        s test -f "/boot/loader/entries/arch-$k.conf"
-  check "kernel image for $k"      s test -f "/boot/vmlinuz-$k"
-done
-check "timezone is $EXP_TZ"        bash -c "readlink /etc/localtime | grep -q '$EXP_TZ\$'"
-check "LANG is $EXP_LOCALE"        grep -qx "LANG=$EXP_LOCALE" /etc/locale.conf
-check "zram swap is on"            bash -c 'swapon --show=NAME --noheadings | grep -q zram'
-check "zswap is off (kernel command line)" grep -qw zswap.enabled=0 /proc/cmdline
-check "NetworkManager is active"   systemctl is-active NetworkManager
-check "sshd is active"             systemctl is-active sshd
-check "display manager is active ($(systemctl show -p Id --value display-manager.service 2>/dev/null))" \
-  systemctl is-active display-manager.service
-check "login screen is up (a logind greeter session)" greeter_session
-if [[ $EXP_LOCK_ROOT == 1 ]]; then check "root is locked" root_locked; fi
-if [[ $EXP_SSH_PW == 0 ]]; then check "sshd refuses passwords" sshd_no_pw; fi
-if [[ -n $EXP_WIFI ]]; then check "Wi-Fi profile, mode 600" wifi_profile; fi
-if [[ -n $EXP_FIRSTBOOT ]]; then
-  check "first-boot hook done marker" test -e /var/lib/llangvilla/firstboot.done
-  check "repo checkout in /opt/llangvilla" test -d /opt/llangvilla/.git
-  check "no first-boot failure notice" test ! -e /etc/issue.d/llangvilla-firstboot.issue
-fi
-exit $fails
-CHECKS
+  ssh_limit=600 ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" < "$repo/vm/checks/base.sh" || fails=1
 
   # From the outside: password logins must be refused when key-only is configured.
   if [[ $(env_value SSH_PASSWORD_AUTH 0) == 0 ]]; then
@@ -612,6 +545,12 @@ SH
     ok "Second run changed nothing"
   fi
 
+  step "A dry run: changes nothing, and still builds the user layer"
+  out=$(ssh_limit=1200 vm_sudo "$apply --dry-run" 2>&1) || { printf '%s\n' "$out" >&2; die "apply.sh --dry-run failed."; }
+  grep -q 'Build the user layer without switching' <<<"$out" || { printf '%s\n' "$out" >&2; die "The dry run didn't build the user layer."; }
+  if grep -Eq 'changed=[1-9]' <<<"$out"; then printf '%s\n' "$out" >&2; die "The dry run reports changes right after a clean run."; fi
+  ok "Dry run: no changes, user layer built"
+
   # Two real snapshots (one per run) plus three fakes: the two oldest fakes must be gone.
   vm_root_sh <<'SH' || die "Snapshots before upgrades are wrong (above)."
 snaps=(/.snapshots/before-upgrade-*)
@@ -624,9 +563,22 @@ done
 SH
   ok "Snapshots before upgrades: the newest 3 kept, read-only"
 
+  # packages_remove (empty in the repo): install a small package by hand, then apply
+  # only the packages role with it in the list. It must be gone afterwards.
+  step "Removing a package with packages_remove"
+  ssh_limit=600 vm_sudo pacman -S --needed --noconfirm cowsay >/dev/null || die "Could not install the test package (cowsay)."
+  out=$(ssh_limit=900 vm_sudo "$apply --no-upgrade -- --tags packages -e '{\"packages_remove\": [\"cowsay\"]}'" 2>&1) \
+    || { printf '%s\n' "$out" >&2; die "apply.sh with packages_remove failed."; }
+  if ssh "${S[@]}" "$vm_user@127.0.0.1" pacman -Q cowsay >/dev/null 2>&1; then
+    printf '%s\n' "$out" >&2; die "packages_remove left cowsay installed."
+  fi
+  ok "packages_remove removed the package"
+
   step "Checking the housekeeping timers and services"
-  vm_sudo systemctl is-enabled --quiet paccache.timer llangvilla-nix-cleanup.timer llangvilla-firmware-check.timer \
-    || die "A housekeeping timer is not enabled (paccache, llangvilla-nix-cleanup, llangvilla-firmware-check)."
+  local timer timers=""
+  for timer in paccache btrfs-scrub@- llangvilla-nix-cleanup llangvilla-firmware-check \
+               llangvilla-disk-check llangvilla-apply-reminder; do timers+="$timer.timer "; done
+  vm_sudo systemctl is-enabled --quiet "$timers" || die "A housekeeping timer is not enabled (one of: $timers)."
   ssh_limit=900 vm_sudo systemctl start llangvilla-nix-cleanup.service \
     || { vm_sudo journalctl -u llangvilla-nix-cleanup.service -b --no-pager -o cat >&2 || true; die "The Nix cleanup failed (journal above)."; }
   ok "Nix cleanup ran"
@@ -636,6 +588,18 @@ SH
   grep -q '^No firmware updates\.$' <<<"$out" \
     || { printf '%s\n' "$out" >&2; die "The firmware check didn't run cleanly (journal above)."; }
   ok "Firmware check ran (no updates, as expected in a VM)"
+  # The VM's virtio disk has no SMART and a fresh btrfs has no errors.
+  ssh_limit=600 vm_sudo systemctl start llangvilla-disk-check.service || die "The disk check service failed."
+  out=$(vm_sudo journalctl -u llangvilla-disk-check.service -b --no-pager -o cat 2>&1 || true)
+  grep -q '^No disk problems found\.$' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; die "The disk check didn't run cleanly (journal above)."; }
+  ok "Disk check ran (no problems)"
+  # apply.sh has just upgraded, so the reminder must count 0 days and leave no notice.
+  vm_sudo systemctl start llangvilla-apply-reminder.service || die "The apply reminder service failed."
+  out=$(vm_sudo journalctl -u llangvilla-apply-reminder.service -b --no-pager -o cat 2>&1 || true)
+  grep -q '^Last apply: 0 days ago' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; die "The apply reminder didn't see the last upgrade (journal above)."; }
+  ok "Apply reminder ran (last upgrade: today)"
 
   step "Rebooting to check the result comes up"
   vm_reboot
@@ -674,11 +638,12 @@ SH
 check_config_results() {
   local remote fails=0
   step "Checking what the config produced"
-  remote=$(python3 - "$repo/config/home/theme.json" "$test_password" <<'PY'
+  remote=$(python3 - "$repo/config/home/theme.json" "$test_password" "$repo/config/home/host.json" <<'PY'
 import json, shlex, sys
 t = json.load(open(sys.argv[1]))
+h = json.load(open(sys.argv[3]))
 v = {
-    "PW": sys.argv[2],
+    "PW": sys.argv[2], "KEYBOARD": h["keyboardLayout"],
     "SCHEME": t["colorScheme"], "ICONS": t["iconTheme"], "GTK": t["gtkTheme"],
     "PLASMA": t["plasmaTheme"], "DECO": t["windowDecoration"].removeprefix("__aurorae__svg__"),
     "CURSOR": t["cursor"]["theme"], "CURSOR_SIZE": str(t["cursor"]["size"]),
@@ -689,60 +654,7 @@ print(" ".join(f"{k}={shlex.quote(x)}" for k, x in v.items()) + " bash -s")
 PY
 )
   # shellcheck disable=SC2029  # expanding on the client side is the point
-  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" <<'CHECKS' || fails=1
-fails=0
-pass() { printf '  \e[32m✔\e[0m %s\n' "$1"; }
-fail() { printf '  \e[31m✖\e[0m %s: %s\n' "$1" "$2"; fails=1; }
-check() { local name=$1; shift; if out=$("$@" 2>&1 </dev/null); then pass "$name"; else fail "$name" "${out:-not as expected}"; fi; }
-s() { printf '%s\n' "$PW" | sudo -S -p '' "$@"; }
-img="/usr/share/wallpapers/$WP_NAME/contents/images/$WP_SIZE.jpg"
-greeter=$(getent passwd plasmalogin | cut -d: -f6)
-
-# login_screen
-check "login screen: wallpaper drop-in"  s grep -qx "Image=file://$img" /etc/plasmalogin.conf.d/10-llangvilla.conf
-# Once the login screen has started, Plasma replaces ColorScheme with the SHA-1 of the
-# scheme file it applied (login_screen role): either means the scheme is set.
-greeter_scheme() {
-  local h
-  h=$(sha1sum "/usr/share/color-schemes/$SCHEME.colors" | cut -d' ' -f1)
-  s grep -qx -e "ColorScheme=$SCHEME" -e "ColorSchemeHash=$h" "$greeter/.config/kdeglobals"
-}
-check "login screen: colour scheme"      greeter_scheme
-check "login screen: icons"              s grep -qx "Theme=$ICONS" "$greeter/.config/kdeglobals"
-check "login screen: font"               s grep -q "^font=$FONT,$FONT_SIZE," "$greeter/.config/kdeglobals"
-check "login screen: cursor"             s grep -qx "cursorTheme=$CURSOR" "$greeter/.config/kcminputrc"
-check "login screen: cursor size"        s grep -qx "cursorSize=$CURSOR_SIZE" "$greeter/.config/kcminputrc"
-check "wallpaper package $WP_NAME"       test -f "$img" -a -f "/usr/share/wallpapers/$WP_NAME/metadata.json"
-# theme
-check "window decoration $DECO"          test -d "/usr/share/aurorae/themes/$DECO"
-check "colour scheme $SCHEME"            test -f "/usr/share/color-schemes/$SCHEME.colors"
-check "Plasma style $PLASMA"             test -d "/usr/share/plasma/desktoptheme/$PLASMA"
-check "icons $ICONS"                     test -f "/usr/share/icons/$ICONS/index.theme"
-check "cursors $CURSOR"                  test -d "/usr/share/icons/$CURSOR/cursors"
-check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0"
-# user_avatar
-check "avatar icon"                      test -f "/var/lib/AccountsService/icons/$USER"
-check "avatar entry"                     s grep -qx "Icon=/var/lib/AccountsService/icons/$USER" "/var/lib/AccountsService/users/$USER"
-# boot
-check "zswap off in every boot entry"    s bash -c 'for f in /boot/loader/entries/*.conf; do grep -q "^options.*zswap\.enabled=0" "$f" || { echo "$f"; exit 1; }; done'
-# nix
-check "Nix daemon socket active"         systemctl is-active nix-daemon.socket
-check "Nix flakes enabled"               grep -qx 'experimental-features = nix-command flakes' /etc/nix/nix.conf
-# home_manager (written during the switch; colours, icons and panels come at login)
-check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
-check "keyboard layout gb (kxkbrc)"      grep -qx 'LayoutList=gb' "$HOME/.config/kxkbrc"
-check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"
-check "window decoration selected"       grep -qx "theme=__aurorae__svg__$DECO" "$HOME/.config/kwinrc"
-check "interface font $FONT $FONT_SIZE"  grep -q "^font=$FONT,$FONT_SIZE," "$HOME/.config/kdeglobals"
-for app in dolphinrc katerc arkrc; do
-  check "menu bar off ($app)"            grep -qx 'MenuBar=Disabled' "$HOME/.config/$app"
-done
-check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' "$HOME/.config/konsolerc"
-check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
-check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
-check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
-exit $fails
-CHECKS
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "$remote" < "$repo/vm/checks/config.sh" || fails=1
   (( fails == 0 )) || die "The config didn't produce everything it should (see above)."
   ok "Everything the config sets is in place"
 }
@@ -767,6 +679,8 @@ timeout 10 man -P cat plasmalogin.conf 2>/dev/null </dev/null | grep -i -A3 -E '
 test -f /usr/share/wayland-sessions/plasma.desktop
 mkdir -p ${dropin%/*}
 printf '[Autologin]\nUser=%s\nSession=plasma\n' "$vm_user" > $dropin
+# A notice, for notices.nix to show at login.
+printf 'VM test notice: shown at desktop login.\n' > /etc/motd.d/llangvilla-vmtest
 SH
   vm_reboot
   ssh "${S[@]}" "$vm_user@127.0.0.1" \
@@ -781,6 +695,12 @@ SH
   ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qx 'ColorScheme=$scheme' .config/kdeglobals" \
     || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
   ok "Colour scheme $scheme applied at login"
+
+  # notices.nix logs each notice its notification service accepted.
+  out=$(vm_sudo journalctl -b -t llangvilla-notices --no-pager -o cat 2>&1 || true)
+  grep -qx 'shown llangvilla-vmtest' <<<"$out" \
+    || { printf '%s\n' "${out:-nothing logged}" >&2; die "The test notice was not shown at login (notices.nix; journal above)."; }
+  ok "The pending notice was shown as a desktop notification (screenshot: desktop-after-login)"
 
   for f in "${gtk_files[@]}"; do
     ssh "${S[@]}" "$vm_user@127.0.0.1" test -L "$f" || replaced+=("$f")
@@ -799,7 +719,7 @@ SH
   done
   ok "Re-applied cleanly; the GTK files are home-manager's again"
 
-  vm_sudo rm -f "$dropin" || warn "Could not remove the test autologin ($dropin)."
+  vm_sudo rm -f "$dropin" /etc/motd.d/llangvilla-vmtest || warn "Could not remove the test autologin ($dropin) and notice."
 }
 
 do_boot() {
@@ -809,7 +729,7 @@ do_boot() {
   find_ovmf
   qemu_base "$disk" "$show"
   step "Booting the installed system"
-  info "Log in as $(env_value USER_NAME jack) (password '$test_password' for a test install)"
+  info "Log in as $(env_value USER_NAME) (password '$test_password' for a test install)"
   info "SSH from another terminal: vm/test-vm.sh ssh"
   info "Changes persist on $disk until the next install"
   # Not exec: the first boot after an install clones from the served snapshot.
@@ -836,7 +756,7 @@ do_live() {
 do_ssh() {
   [[ -f $key ]] || die "No test key yet. Run: vm/test-vm.sh install"
   ssh_opts
-  exec ssh "${S[@]}" -o BatchMode=no "$(env_value USER_NAME jack)@127.0.0.1" "${ssh_args[@]}"
+  exec ssh "${S[@]}" -o BatchMode=no "$(env_value USER_NAME)@127.0.0.1" "${ssh_args[@]}"
 }
 
 case $cmd in

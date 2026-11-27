@@ -6,36 +6,30 @@ It is an Ansible playbook behind a single entrypoint, `apply.sh`. Ansible owns t
 
 ## Quick start
 
-On the machine:
-
 ```bash
-sudo /opt/llangvilla/config/apply.sh                                 # pull, upgrade, apply
-sudo /opt/llangvilla/config/apply.sh --no-upgrade -- --check --diff  # dry run
+sudo /opt/llangvilla/config/apply.sh             # pull, upgrade, apply
+sudo /opt/llangvilla/config/apply.sh --dry-run   # what would change
 ```
 
-Before pushing a change, from a checkout:
-
-```bash
-make lint-yaml lint-ansible lint-nix                    # the checks CI runs on config/
-make vm-config                                          # apply the working tree to the test VM
-```
+To change the config, see [Making a change](#making-a-change).
 
 ## Usage
 
 ```
-apply.sh [--no-pull] [--no-upgrade] [-- ANSIBLE-PLAYBOOK-ARGS...]
+apply.sh [--no-pull] [--no-upgrade | --dry-run] [-- ANSIBLE-PLAYBOOK-ARGS...]
 ```
 
 Run as root. `apply.sh` does the following:
 
 1. Unless `--no-pull`: if its directory is in a git checkout, runs `git pull --ff-only` and re-runs the updated `apply.sh`.
-2. Unless `--no-upgrade`: upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
+2. Unless `--no-upgrade`: prints the [Arch news](https://archlinux.org/news/) posted since the last upgrade (some posts announce a manual step; at a terminal it waits 20 s so you can stop), takes a [snapshot](#snapshots), then upgrades the whole system with `pacman -Syu`. On Arch, installing packages against a stale package database is a partial upgrade, which can break the system, so the playbook always starts from a current one.
 3. Installs `ansible` with pacman if `ansible-playbook` is missing.
 4. Runs `ansible-playbook site.yml` from `config/ansible/`, passing any arguments after `--`.
 5. After an upgrade, even a failed run, says what still runs old code. It never acts on it itself:
    - **Reboot needed**: the running kernel was upgraded, so its modules are gone (plugging in new hardware can fail until you reboot).
    - **Log out and in**: a desktop or login session still uses replaced libraries (Qt, KDE, Mesa and so on).
    - **Services still using replaced libraries**: restart them with `systemctl restart`, or reboot.
+6. After a successful run with an upgrade, records it in `/var/lib/llangvilla/last-upgrade`: the next run's news start from there, and the daily [apply reminder](#housekeeping) counts from it.
 
 Only one run at a time: a second `apply.sh` while one is running exits with `Another apply.sh is already running`.
 
@@ -44,8 +38,9 @@ Every run is also logged to `/var/log/llangvilla/apply-<date>-<time>.log` (the n
 | Option | Effect |
 |---|---|
 | `--no-pull` | Apply the files as they are. Used by the VM test and for local edits |
-| `--no-upgrade` | Skip the system upgrade. Use it for dry runs; a real run should upgrade |
-| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --check --diff`, `-- --tags user_avatar`, `-- -v`. Each role has a tag of its own name |
+| `--no-upgrade` | Skip the system upgrade. A real run should upgrade |
+| `--dry-run` | Show what would change and change nothing: no upgrade, no snapshot, the playbook in check mode with `--diff`. The user layer is built, not switched to. Needs a machine that has been applied once (ansible installed) |
+| `-- ARGS` | Passed to `ansible-playbook`, e.g. `-- --tags user_avatar`, `-- -v`, `-- --diff`. Each role has a tag of its own name |
 | `-h`, `--help` | Show usage |
 
 | Exit status | Meaning |
@@ -73,16 +68,16 @@ git clone https://github.com/cqkh42/llangvilla.git /opt/llangvilla
 ```
 config/
 ├── apply.sh                       entrypoint
-├── assets/                        wallpaper source (SVG) and a 3840×2160 render
+├── assets/                        the wallpaper (SVG source, 3840×2160 render) and the avatar
 ├── home/                          the user layer: a Nix flake for home-manager
 │   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
 │   ├── theme.json                 the look: theme names, fonts, wallpaper (read by Nix and Ansible)
-│   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix
+│   ├── host.json                  the machine: login user, keyboard layout, mirror countries (likewise)
+│   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix, notices.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
     ├── inventory.ini              optiplex, ansible_connection=local
-    ├── host_vars/optiplex.yml     per-machine variables
     ├── requirements.yml           collections, for linting only
     ├── site.yml                   checks the user exists, then runs the roles (one tag per role)
     └── roles/
@@ -94,7 +89,7 @@ config/
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
         ├── nix/                   Nix from pacman, daemon socket, flakes
-        ├── housekeeping/          weekly: package cache, Nix cleanup, firmware update check
+        ├── housekeeping/          timers: package cache, Nix cleanup, btrfs scrub; firmware, disk and apply checks
         └── home_manager/          runs home-manager switch as the user (last role)
 ```
 
@@ -102,24 +97,28 @@ config/
 
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
-| `user_name` | `host_vars/optiplex.yml` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist |
+| `host` | `site.yml`, from `config/home/host.json` | `jack`, `gb`, `[GB]` | The machine's facts, shared with the user layer: login user, keyboard layout, mirror countries. Change them there |
+| `user_name` | `site.yml`, `host.user` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist. The flake's `homeConfigurations` entry is named from the same file |
 | `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
-| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox, vim, htop, btop, man-db, man-pages, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
-| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `[GB]`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
+| `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox and its Plasma integration, spectacle, the system monitor, vim, htop, btop, man pages, media codecs, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
+| `packages_remove` | `roles/packages/defaults/main.yml` | `[]` | Removed with pacman, with the dependencies only they needed ([Removing things](#removing-things)) |
+| `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `host.mirrorCountries`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
+| `user_avatar_src` | `roles/user_avatar/defaults/main.yml` | `assets/avatar.png` | The login user's picture, on the login screen and in Plasma |
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
+| `housekeeping_apply_max_days` | `roles/housekeeping/defaults/main.yml` | `14` | The apply reminder writes a notice once the last successful upgrade by `apply.sh` is older than this |
 | `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
-| `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
-| `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
+| `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply |
+| `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes |
 
 ## User layer
 
 `config/home/` is a Nix flake for [home-manager](https://github.com/nix-community/home-manager), which owns everything in the user's home. The `home_manager` role applies it as the user:
 
 ```bash
-nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#jack
+nix run path:config/home#home-manager -- switch -b backup --flake path:config/home#<user>   # user from host.json
 ```
 
 - **Pinned.** `flake.lock` fixes nixpkgs, home-manager and plasma-manager. Nothing changes until you run `nix flake update` in `config/home`, test in the VM and commit the new lock.
@@ -136,6 +135,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 | `gtk.nix` | GTK 3/4 theme, icons, cursor and font to match |
 | `apps.nix` | Menu bars off in Dolphin, Kate, Ark and Konsole (☰ menus; Ctrl+M brings one back) |
 | `git.nix`, `shell.nix` | Git behaviour (no identity yet) and bash |
+| `notices.nix` | Shows the config's notices (`/etc/motd.d/llangvilla-*`) as desktop notifications at login ([Housekeeping](#housekeeping)) |
 
 What goes where:
 
@@ -144,7 +144,7 @@ What goes where:
 | pacman (Ansible) | GUI apps, themes, fonts, anything that plugs into Plasma or Qt | Nix GUI apps need nixGL on Arch; Nix Qt plugins can't load into Arch's Qt; system users (the login screen) can't see the Nix profile |
 | Nix (home-manager) | Dotfiles, settings, command-line tools | Declarative, pinned, roll back with `home-manager generations` |
 
-To add something, add a module under `modules/` and import it from `home.nix`. Check it with `make lint-nix` (flake check, nixfmt, build; CI runs the same), format it with `make fmt-nix`, then `make vm-config`.
+To add something, add a module under `modules/`, import it from `home.nix`, then follow [Making a change](#making-a-change) (`make fmt-nix` formats it).
 
 ## Themes
 
@@ -152,7 +152,7 @@ The `theme` role installs Colloid dark into `/usr/share`, so the login screen, w
 
 | Part | From | Installed as |
 |---|---|---|
-| Plasma style, window decorations, colour scheme, look-and-feel | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark`, `com.github.vinceliuice.Colloid-dark` |
+| Plasma style, window decorations, colour scheme | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark` |
 | Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
 | GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
 
@@ -160,7 +160,7 @@ Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in o
 
 Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply. The weekly upstream check opens an issue with the commit to paste when there's a newer one ([dependency bumps](../docs/maintenance.md#dependency-bumps)).
 
-The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so `plasma.nix` applies the look-and-feel's parts individually, not the whole package.
+Colloid's look-and-feel package is not installed: its defaults name Kvantum as the widget style, and Kvantum is not used. `plasma.nix` selects the parts individually instead.
 
 ## Snapshots
 
@@ -168,7 +168,7 @@ Before every upgrade, including first boot's, `apply.sh` takes a read-only btrfs
 
 - **Covered:** `/` (the system, `/etc`, `/usr`, `/var` apart from the next item).
 - **Not covered:** `/home`, `/var/log` and `/var/cache/pacman/pkg` (separate subvolumes), and `/boot` (FAT, see the kernel step below). Nor a `pacman -Syu` you run by hand, or a run with `--no-upgrade`: upgrade with `apply.sh`.
-- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (`ROOT_FS=ext4`).
+- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (a machine not set up by the installer).
 - **If an upgrade broke something, roll back soon.** Each `apply.sh` run takes a new snapshot and drops the oldest, so after three more runs the good one is gone.
 
 List them with `sudo ls /.snapshots/`. To see what changed, compare a directory, e.g. `sudo diff -rq /.snapshots/before-upgrade-<…>/etc /etc`.
@@ -205,15 +205,20 @@ Once everything works, delete the broken system: mount the top level as above, `
 
 ## Housekeeping
 
-Weekly timers from the `housekeeping` role; nothing runs during an apply.
+Timers from the `housekeeping` role; nothing runs during an apply.
 
-| Timer | Does |
-|---|---|
-| `paccache.timer` | Keeps the last 3 versions of each package in `/var/cache/pacman/pkg/` (enough to downgrade from) |
-| `llangvilla-nix-cleanup.timer` | Deletes home-manager generations older than `housekeeping_nix_keep`, then runs `nix-collect-garbage` |
-| `llangvilla-firmware-check.timer` | Checks LVFS for firmware updates (`fwupd`). If there are any, the login message says so; install them with `sudo fwupdmgr update`, then reboot. It never installs anything itself |
+| Timer | When | Does |
+|---|---|---|
+| `paccache.timer` | Weekly | Keeps the last 3 versions of each package in `/var/cache/pacman/pkg/` (enough to downgrade from) |
+| `llangvilla-nix-cleanup.timer` | Weekly | Deletes home-manager generations older than `housekeeping_nix_keep`, then runs `nix-collect-garbage` |
+| `btrfs-scrub@-.timer` | Monthly | btrfs-progs' own scrub of `/`: reads every block and checks its checksum |
+| `llangvilla-firmware-check.timer` | Weekly | Checks LVFS for firmware updates (`fwupd`). Install them with `sudo fwupdmgr update`, then reboot. It never installs anything itself |
+| `llangvilla-disk-check.timer` | Weekly | SMART health of every disk `smartctl` can see, btrfs's error counters on `/`, and the last scrub's result |
+| `llangvilla-apply-reminder.timer` | Daily | Whether the last successful upgrade by `apply.sh` is older than `housekeeping_apply_max_days` (14) |
 
-Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; its output is in `journalctl -u llangvilla-firmware-check.service`.
+The checks never fail their unit. When they find something, they write a **notice**: a file in `/etc/motd.d/llangvilla-*`, which the login message shows over SSH and on the text console. At each desktop login, `config/home/modules/notices.nix` shows every notice as a notification that stays until dismissed (so does the installer's first-boot failure notice). A clean check removes its notice.
+
+Run one now with e.g. `sudo systemctl start llangvilla-disk-check.service`; its output is in `journalctl -u llangvilla-disk-check.service`. The checks are scripts in `roles/housekeeping/files/`, listed in `housekeeping_checks`; add one there to add a check.
 
 ## What goes in the config
 
@@ -222,7 +227,7 @@ Run one now with e.g. `sudo systemctl start llangvilla-firmware-check.service`; 
 | Base (`installer/packages.txt`) | Plasma, Plasma Login Manager, drivers, audio, Bluetooth, NetworkManager | Needed to boot to a usable desktop; changes only on reinstall |
 | Config (this directory) | Apps, themes, settings, anything you expect to change | Applies to the running machine with `apply.sh` |
 
-The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as `user_name` belong in `host_vars`.
+The config may rely on the base: a role that themes the login screen checks that Plasma Login Manager is installed instead of installing it. It must not depend on installer settings; machine values such as the user name belong in `config/home/host.json`.
 
 ## Writing tasks
 
@@ -237,12 +242,26 @@ The first run happens before the login screen starts, and every run is as root. 
 - **Use `community.general.pacman`** for packages, without `update_cache`: `apply.sh` has already done a full upgrade. Arch package names differ from other distros (`openssh`, `python-*`, `base-devel`). AUR packages need a helper (`paru`, `yay`) run as a normal user, never root.
 - **Put Plasma Login Manager settings in `/etc/plasmalogin.conf.d/*.conf`**, not `/etc/plasmalogin.conf`.
 
+## Removing things
+
+The config adds and changes things; it doesn't notice what it no longer mentions. Taking a package out of `packages_install`, a file out of a role, or a whole role out of `site.yml` leaves it on the machine. To really remove something:
+
+| What | How |
+|---|---|
+| A package | Move it from `packages_install` to `packages_remove`. Once the machine has applied it, empty `packages_remove` again |
+| A file or directory a role wrote | Add a task to that role with `state: absent` and a comment saying what it retires (the `theme` role's look-and-feel task is one). Delete the task once the machine has applied it |
+| A whole role | Replace its tasks with the `state: absent` tasks for what it wrote (disable its services first), apply, then delete the role and its line in `site.yml` |
+| A package from the base (`installer/packages.txt`) | Take it out of the list and add it to `packages_remove`: the base never removes anything itself |
+| A theme file upstream dropped | Nothing to do: the `theme` role clears the old files whenever a pinned commit changes |
+
+There is one machine, so a retiring task only has to stay until it has applied once; the VM test applies everything from scratch anyway.
+
 ## Making a change
 
 1. Edit the role, or add one and list it in `site.yml`.
-2. Lint: `make lint-yaml lint-ansible` (and `make lint-nix` for `config/home`), as CI does.
-3. Test against the working tree: `vm/test-vm.sh config`, then `vm/test-vm.sh boot` to look at it ([vm](../vm/README.md)).
-4. Commit and push, then run `sudo /opt/llangvilla/config/apply.sh` on the machine.
+2. Lint: `make lint-yaml lint-ansible`, and `make lint-nix` for `config/home` ([the make targets](../README.md#development)).
+3. Test against the working tree: `make vm-config` on an existing test VM, then `vm/test-vm.sh boot` to look at it ([vm](../vm/README.md)). The PR runs the full VM test.
+4. Merge, then run `sudo /opt/llangvilla/config/apply.sh` on the machine (`--dry-run` first to see what it will do).
 
 ## Troubleshooting
 
@@ -253,7 +272,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check the login user exists` fails | `user_name` doesn't match the installer's `USER_NAME` |
 | `Check Plasma Login Manager is installed` fails | PLM is missing from the base; it comes from `installer/packages.txt` |
 | `Look up the login screen's system user` fails | PLM's system user isn't `plasmalogin`. Find it with `getent passwd \| grep -i login` and set `login_screen_greeter_user` |
-| The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
 | `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |

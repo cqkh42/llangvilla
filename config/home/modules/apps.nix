@@ -1,4 +1,4 @@
-# Menus (design decision: option D): no menu bars; KDE apps use their ☰ button.
+# Menus (docs/design.md, "Menus"): no menu bars; KDE apps use their ☰ button.
 # Ctrl+M brings an app's menu bar back if it is ever needed.
 {
   programs.plasma.configFile = {

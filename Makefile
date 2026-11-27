@@ -1,17 +1,5 @@
 # The one place the repo's checks are spelled out: CI (.github/workflows/lint.yml)
-# and the docs run these targets. `make lint` runs everything that needs no VM.
-#
-#   make lint            all the checks below
-#   make lint-shell      ShellCheck on every script
-#   make lint-env        the autoinstall.env template passes install.sh --check once
-#                        filled in, and is rejected as it is (placeholders left)
-#   make lint-yaml       yamllint
-#   make lint-ansible    ansible-lint and a playbook syntax check
-#   make lint-nix        nix flake check, nixfmt and a build of the home configuration
-#   make lint-docs       relative links and #section anchors in the Markdown files
-#   make fmt-nix         format the Nix files (what lint-nix checks)
-#   make vm              vm/test-vm.sh all: install, check and configure a VM
-#   make vm-config       vm/test-vm.sh config: re-apply config/ to the existing VM
+# and the docs run these targets. What each one checks: README.md, Development.
 #
 # The linters are pinned in .github/lint/requirements.txt:
 #   pip install -r .github/lint/requirements.txt
@@ -28,7 +16,13 @@ FLAKE := path:$(CURDIR)/config/home
 lint: lint-shell lint-env lint-yaml lint-ansible lint-nix lint-docs
 
 lint-shell:
-	$(SHELLCHECK) installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh
+	$(SHELLCHECK) installer/*.sh config/*.sh vm/*.sh vm/checks/*.sh .github/scripts/*.sh config/ansible/roles/*/files/*.sh
+	@# The first-boot script install.sh writes into the new system, from its FIRSTBOOT
+	@# heredoc, with stand-in values for the variables install.sh fills in.
+	{ printf '#!/bin/bash\nset -euo pipefail\nurl=u branch=b entry=e dir=/opt/llangvilla\n'; \
+	  sed -n "/cat <<'FIRSTBOOT'$$/,/^FIRSTBOOT$$/p" installer/install.sh | sed '1d;$$d'; } \
+	  | $(SHELLCHECK) -
+	@echo "ShellCheck: the scripts and the first-boot script are clean."
 
 lint-env:
 	tmp=$$(mktemp) && trap 'rm -f "$$tmp"' EXIT; \
@@ -46,13 +40,15 @@ lint-yaml:
 	yamllint .
 
 lint-ansible:
-	ansible-lint config/ansible
+	@# From the repo root, so .ansible-lint picks the files. Deprecation warnings off for
+	@# ansible-lint only: it loads every callback plugin in ansible-core, and two of those
+	@# are deprecated. The syntax check below keeps them, for the playbook's own.
+	ANSIBLE_DEPRECATION_WARNINGS=False ansible-lint
 	cd config/ansible && ANSIBLE_CONFIG=ansible.cfg ansible-playbook --syntax-check site.yml
 
 lint-nix:
 	nix flake check '$(FLAKE)'
 	find config/home -name '*.nix' -print0 | xargs -0 nix run '$(FLAKE)#formatter.x86_64-linux' -- --check
-	nix build '$(FLAKE)#homeConfigurations.jack.activationPackage' --no-link
 
 lint-docs:
 	.github/scripts/check-links.py

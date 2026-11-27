@@ -1,4 +1,0 @@
----
-# The login user the installer created (USER_NAME in the stick's autoinstall.env).
-# The playbook checks this user exists rather than assuming it.
-user_name: jack

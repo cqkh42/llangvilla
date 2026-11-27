@@ -287,7 +287,7 @@ mount_ventoy() {
 #   arch-autoinstall/autoinstall.env   template copied only if missing (holds your secrets)
 #   arch-autoinstall/packages.txt     refreshed from the repo on every run
 populate_stick() {
-  local v=$1 need_copy=1 f
+  local v=$1 need_copy=1
   local iso_dest="${v}/${STICK_ISO}"
   local cfg_dest="${v}/${STICK_CFG}"
   local json_dest="${v}/ventoy/ventoy.json"
@@ -352,14 +352,6 @@ JSON
   # --- packages.txt: always refreshed (edit it in the repo, not on the stick) ---
   cp "${BUILD_DIR}/packages.txt" "${cfg_dest}/packages.txt"
   ok "packages.txt copied ($(grep -cv '^[[:space:]]*\(#\|$\)' "${cfg_dest}/packages.txt") lines of packages)"
-
-  # --- leftovers from the old archinstall flow ---
-  for f in user_configuration.json user_credentials.json; do
-    if [[ -f "${cfg_dest}/${f}" ]]; then
-      warn "${STICK_CFG}/${f} is from the old archinstall flow and is no longer used."
-      warn "  It may hold a password hash: delete it with  rm \"${cfg_dest}/${f}\""
-    fi
-  done
   sync
   STICK_POPULATED=1
 }

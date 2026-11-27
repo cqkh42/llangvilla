@@ -1,10 +1,11 @@
-# The desktop: Colloid dark laid out like macOS (config design doc, "The look").
+# The desktop: Colloid dark laid out like macOS (docs/design.md, "The look").
 # The theme files are installed system-wide by Ansible's theme role; this module
 # only selects them, by the names in ../theme.json (shared with Ansible's
 # login_screen role). overrideConfig: the repo always wins, and changes made in
 # System Settings are reset on the next apply (log out and in after applying).
 let
   theme = builtins.fromJSON (builtins.readFile ../theme.json);
+  host = builtins.fromJSON (builtins.readFile ../host.json);
   # Installed by Ansible's login_screen role as a Plasma wallpaper package.
   wallpaper = "/usr/share/wallpapers/${theme.wallpaper.name}/contents/images/${theme.wallpaper.size}.jpg";
 in
@@ -91,9 +92,9 @@ in
       }
     ];
 
-    # UK keyboard in the session itself, not only from /etc/X11/xorg.conf.d (the
-    # installer's X11_KEYMAP), which a Wayland session may not read.
-    input.keyboard.layouts = [ { layout = "gb"; } ];
+    # The keyboard layout (host.json) in the session itself, not only from
+    # /etc/X11/xorg.conf.d (the installer's X11_KEYMAP), which Wayland may not read.
+    input.keyboard.layouts = [ { layout = host.keyboardLayout; } ];
 
     # Spotlight-style search on Meta+Space (Meta alone still opens the launcher).
     krunner.shortcuts.launch = "Meta+Space";

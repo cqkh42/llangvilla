@@ -1,7 +1,7 @@
 # Weekly dependency bumps, one grouped PR per ecosystem.
-# GitHub Actions and the linters merge themselves once lint passes; a Nix bump gets
-# the VM test started on its branch and waits for a person
-# (.github/workflows/dependabot-automerge.yml). Colloid and Ventoy aren't covered by
+# GitHub Actions and the linters merge themselves once lint passes
+# (.github/workflows/dependabot-automerge.yml); a Nix bump gets the VM test on its PR
+# (vm-test.yml) and waits for a person. Colloid and Ventoy aren't covered by
 # Dependabot: .github/workflows/upstream-check.yml opens an issue for those.
 version: 2
 updates:

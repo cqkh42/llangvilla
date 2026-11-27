@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # the Dependabot follow-up starts it on main after a merge
 
 permissions:
   contents: read
@@ -62,5 +63,5 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 3G
 
-      - name: Flake check, nixfmt, build of the home configuration
+      - name: Flake check (builds the home configuration) and nixfmt
         run: make lint-nix

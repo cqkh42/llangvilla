@@ -9,6 +9,6 @@ Type=oneshot
 #    current one is always kept). They live in the user's home, where a root-only
 #    cleanup doesn't reach. Skipped until home-manager has made a first generation.
 #    ($$ is a literal $: systemd expands $VAR itself, even inside quotes.)
-ExecStart=/usr/bin/runuser -u {{ user_name }} -- /usr/bin/env HOME={{ housekeeping_home }} NIX_REMOTE=daemon /bin/sh -c 'p="$$HOME/.local/state/nix/profiles/home-manager"; [ -e "$$p" ] || exit 0; exec /usr/bin/nix-env --profile "$$p" --delete-generations {{ housekeeping_nix_keep }}'
+ExecStart=/usr/bin/runuser -u {{ user_name }} -- /usr/bin/env HOME={{ user_home }} NIX_REMOTE=daemon /bin/sh -c 'p="$$HOME/.local/state/nix/profiles/home-manager"; [ -e "$$p" ] || exit 0; exec /usr/bin/nix-env --profile "$$p" --delete-generations {{ housekeeping_nix_keep }}'
 # 2. Everything in the store that nothing uses any more.
 ExecStart=/usr/bin/nix-collect-garbage

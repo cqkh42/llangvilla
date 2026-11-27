@@ -5,7 +5,8 @@
 #
 # Only what the machine needs to boot to a usable desktop on this hardware belongs
 # here. Apps, themes and anything you will change on the live box go in the config
-# (config/ansible/roles/packages), which applies without the stick.
+# (config/ansible/roles/packages), which applies without the stick, and can also
+# remove a package again; a package listed here stays until a reinstall.
 #
 # One or more names per line, '#' starts a comment. build-usb.sh and vm/test-vm.sh copy
 # this file onto the stick on every run, so edit it here, not on the stick.
@@ -19,7 +20,7 @@ breeze breeze-gtk kde-gtk-config qqc2-breeze-style plasma-integration xdg-deskto
 systemsettings kinfocenter kmenuedit kde-cli-tools kscreen powerdevil polkit-kde-agent
 plasma-nm plasma-pa bluedevil plasma-disks plasma-thunderbolt
 kwallet-pam ksshaskpass kwrited drkonqi
-kdeplasma-addons milou spectacle plasma-systemmonitor ksystemstats plasma-browser-integration
+kdeplasma-addons milou ksystemstats
 plasma-workspace-wallpapers ocean-sound-theme
 
 # --- audio: PipeWire
@@ -31,9 +32,6 @@ mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-dr
 # --- bluetooth
 bluez bluez-utils
 
-# --- tools. nano stays in the base: an editor for rescue work before the config
-# (and vim) has run. Build tools, man pages and reflector come from the config.
-git nano
-
-# --- media codecs
-gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg
+# --- an editor for rescue work before the config (and vim) has run. git comes from
+# install.sh with the first-boot hook; build tools, man pages and reflector from the config.
+nano

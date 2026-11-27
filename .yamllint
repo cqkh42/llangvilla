@@ -6,3 +6,12 @@ rules:
   document-start: disable
   truthy:
     check-keys: false   # GitHub Actions' `on:`
+  # What ansible-lint requires of a custom config (it warns otherwise):
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

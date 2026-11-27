@@ -1,0 +1,3 @@
+---
+# The avatar, from config/assets beside the wallpaper.
+user_avatar_src: "{{ playbook_dir }}/../assets/avatar.png"

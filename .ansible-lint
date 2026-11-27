@@ -1,0 +1,9 @@
+---
+# ansible-lint's settings (make lint-ansible). Only the playbook is Ansible; the
+# rest of the repo is not, so it is left out instead of discovered.
+exclude_paths:
+  - .github/
+  - installer/
+  - vm/
+  - config/home/
+  - docs/

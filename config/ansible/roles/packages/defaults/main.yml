@@ -1,19 +1,33 @@
 ---
 # Apps and tools on top of the base system. The base (desktop, drivers, audio,
 # networking) comes from installer/packages.txt; see config/README.md for which
-# list a package belongs in. The base lists Plasma's packages itself, without
-# plasma-welcome, so nothing needs removing here.
+# list a package belongs in.
 packages_install:
   - kate
   - ark
   - firefox
+  - plasma-browser-integration   # Plasma's side of the browser extension
+  - spectacle                    # screenshots
+  - plasma-systemmonitor
   - vim
   - htop
   - btop
   - man-db
   - man-pages
+  # media codecs (GStreamer for KDE apps and Firefox's fallbacks, FFmpeg)
+  - gst-plugins-good
+  - gst-plugins-bad
+  - gst-plugins-ugly
+  - gst-libav
+  - ffmpeg
   # compilers and makepkg, for building packages (e.g. from the AUR) by hand
   - base-devel
   # fonts: Inter for the interface, JetBrains Mono (Nerd Font) for terminals
   - inter-font
   - ttf-jetbrains-mono-nerd
+
+# Packages to take off the machine: taking a name out of packages_install leaves it
+# installed, so move it here instead (config/README.md, Removing things). Removed
+# with its no-longer-needed dependencies; a package something else still needs makes
+# the run fail, which is the point. Empty the list once the machine has applied it.
+packages_remove: []

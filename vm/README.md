@@ -99,13 +99,26 @@ In `all`, the first-boot hook has already applied the config, so the config phas
 
 1. Copies the working tree's `config/` to `~/llangvilla-worktree` in the VM.
 2. Runs `config/apply.sh --no-pull` as root. It fails if the playbook fails, if no log appears in `/var/log/llangvilla/`, or if `reflector.timer`, `base-devel`, `man-db` or `man-pages` are missing.
-3. Runs it again and fails if any task reports a change. Before this run it adds three fake old snapshots, and afterwards checks that only the newest 3 `before-upgrade-*` snapshots are left, all read-only. Then checks the housekeeping timers are enabled, and runs the Nix cleanup and the firmware check once (the VM has no updatable firmware, so the check must report none).
+3. Runs it again and fails if any task reports a change, then runs `apply.sh --dry-run`, which must report no changes and build the user layer. Before this run it adds three fake old snapshots, and afterwards checks that only the newest 3 `before-upgrade-*` snapshots are left, all read-only. Then it installs a small package (`cowsay`) by hand and applies the `packages` role with it in `packages_remove`: it must be gone. Then checks the housekeeping timers are enabled (the monthly btrfs scrub too), and runs the Nix cleanup, the firmware check, the disk check and the apply reminder once: the VM has no updatable firmware and no SMART disk, so the checks must report nothing, and the reminder must count the upgrade that just happened.
 4. Reboots and checks that systemd reports `running`, everything the config sets is in place (below), the display manager is active, `zswap.enabled=0` is on the kernel command line and the firewall is on (incoming blocked, SSH rate-limited), then saves a screenshot of the login screen.
-5. Logs in through a **test-only autologin** (a drop-in in `/etc/plasmalogin.conf.d/` written by the test, never part of `config/`), waits for Plasma, saves a screenshot of the desktop and checks the colour scheme from `config/home/theme.json` was applied at login. It reports whether Plasma replaced home-manager's GTK files, then re-applies with the session running and fails if home-manager clashes or the GTK files aren't its own again. The autologin is removed at the end.
+5. Logs in through a **test-only autologin** (a drop-in in `/etc/plasmalogin.conf.d/` written by the test, never part of `config/`), waits for Plasma, saves a screenshot of the desktop and checks the colour scheme from `config/home/theme.json` was applied at login, and that a test notice it left in `/etc/motd.d/` was shown as a notification (`notices.nix` logs each one). It reports whether Plasma replaced home-manager's GTK files, then re-applies with the session running and fails if home-manager clashes or the GTK files aren't its own again. The autologin is removed at the end.
 
-The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, `gb` keyboard, window buttons and decoration, fonts, menu bars off, the GTK settings). Settings Plasma applies only at login are checked in step 5.
+The result checks read their expected values from `config/home/theme.json` and the roles' defaults: the login screen's wallpaper drop-in, colour scheme, icons, font and cursor; the wallpaper package; the Colloid parts in `/usr/share`; the avatar; zswap in every boot entry; the Nix daemon and flakes; and the user layer (a home-manager generation, the keyboard layout from `config/home/host.json`, window buttons and decoration, fonts, menu bars off, the GTK settings, the desktop notices' autostart entry), and that no notice is pending. Settings Plasma applies only at login are checked in step 5.
+
+The two lists of checks above run on the VM itself: they are `vm/checks/base.sh` and `vm/checks/config.sh`, piped to `bash -s` over SSH with the expected values as environment variables (so ShellCheck covers them too).
 
 The test shares one SSH connection for all its commands (`ControlMaster`), because the firewall rate-limits new SSH connections.
+
+## What the VM can't test
+
+The VM is wired, virtual and has no real firmware, so a pass here doesn't cover the hardware ([#37](https://github.com/cqkh42/llangvilla/issues/37) is the checklist for the first real install):
+
+- **Wi-Fi**: the live installer's `iwctl` path, and the installed system actually connecting (only the profile file is checked).
+- **The machine's firmware**: Ventoy booting on it, `bootctl` creating a firmware boot entry, fwupd finding real updates.
+- **The prompts**: the test stick skips the countdown and erases a blank disk; the `YES` prompt for a disk with data is never shown.
+- **A pinned `TARGET_DISK`**: the test uses `auto`.
+- **Real hardware under Plasma**: the GPU at the monitor's resolution, audio, Bluetooth, SMART on a real disk.
+- **Timing**: first boot's Nix download on a home connection.
 
 ## Workflows
 
@@ -130,7 +143,7 @@ All under `~/.cache/llangvilla/vm/`:
 
 ## CI
 
-`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs every Monday, to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
+`.github/workflows/vm-test.yml` builds the ISO and runs `vm/test-vm.sh all` on a GitHub runner with KVM. It runs on every pull request that touches `installer/`, `config/` or `vm/` (Dependabot's Nix bumps included; not when only Markdown files change), every Monday to catch breakage from Arch's rolling updates, and on demand: Actions tab → **VM install test**. Every run includes the real first-boot hook on the branch being tested. Installer logs are uploaded as an artifact.
 
 ## Troubleshooting
 
@@ -141,7 +154,6 @@ All under `~/.cache/llangvilla/vm/`:
 | `No ISO found` | Build one with `installer/build-usb.sh`, or pass `--iso` |
 | `config/apply.sh failed` | The playbook output is shown above. Inspect with `vm/test-vm.sh boot` and `vm/test-vm.sh ssh` |
 | `The second run changed things` | A task isn't idempotent; the changed tasks are listed ([writing tasks](../config/README.md#writing-tasks)) |
-| `--firstboot is now the default` | The hook always runs on the working tree; use `--no-firstboot` to skip it |
 | `Could not serve the snapshot on port 8418` | Something else uses the port: set `VM_GIT_PORT` |
 | `An SSH command timed out after N s: …` | A command on the VM hung (or a step needs a longer limit: `ssh_limit=SECONDS` before the call in `vm/test-vm.sh`). Each SSH command has a limit, 5 minutes unless set longer (applies: 40), so a hang fails its step in minutes. Look around with `vm/test-vm.sh boot` |
 | `The first-boot hook did not finish within 25 minutes` | It's still running or stuck; its journal and the newest `apply.sh` log are shown above |

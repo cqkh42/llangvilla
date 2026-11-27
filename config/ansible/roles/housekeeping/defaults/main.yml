@@ -2,3 +2,20 @@
 # Old home-manager generations are deleted after this long (nix-env's age format):
 # the user layer can be rolled back this far.
 housekeeping_nix_keep: 30d
+
+# The apply reminder's limit: a notice once the last successful apply.sh run (which
+# upgrades the system) is older than this many days.
+housekeeping_apply_max_days: 14
+
+# The checks, each a script in files/ (llangvilla-<name>.sh) run by a service and a
+# timer of the same name. They write a notice to /etc/motd.d/ and never fail.
+housekeeping_checks:
+  - {name: firmware-check, description: "Check for firmware updates (fwupd)", calendar: weekly, network: true}
+  - {name: disk-check, description: "Check disk health (SMART, btrfs errors and scrub)", calendar: weekly}
+  - name: apply-reminder
+    description: "Remind when apply.sh has not run lately"
+    calendar: daily
+    args: "{{ housekeeping_apply_max_days }}"
+
+# Every timer the role writes: the checks, and the Nix cleanup (its service is a template).
+housekeeping_timers: "{{ housekeeping_checks + [{'name': 'nix-cleanup', 'description': 'Nix cleanup', 'calendar': 'weekly'}] }}"
