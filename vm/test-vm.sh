@@ -700,9 +700,19 @@ SH
   sleep 45
   vm_screenshot desktop-after-login
 
+  # plasma-manager's apply_themes login script runs plasma-apply-colorscheme, which
+  # copies the colours into kdeglobals and may record only ColorSchemeHash (the SHA-1
+  # of the scheme file), not ColorScheme, as on the login screen (vm/checks/config.sh).
   # shellcheck disable=SC2029  # expanding on the client side is the point
-  ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qx 'ColorScheme=$scheme' .config/kdeglobals" \
-    || die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager)."
+  if ! ssh "${S[@]}" "$vm_user@127.0.0.1" \
+    "h=\$(sha1sum /usr/share/color-schemes/$scheme.colors | cut -d' ' -f1) && grep -qx -e 'ColorScheme=$scheme' -e \"ColorSchemeHash=\$h\" .config/kdeglobals"; then
+    # shellcheck disable=SC2016  # expands in the VM
+    ssh "${S[@]}" "$vm_user@127.0.0.1" \
+      'echo "  kdeglobals [General]:"; sed -n "/^\[General\]/,/^\[/p" .config/kdeglobals | sed "s/^/    /"
+       f=.local/share/plasma-manager/last_run_script_apply_themes
+       if [ -f "$f" ]; then echo "  apply_themes login script: succeeded"; else echo "  apply_themes login script: did not succeed (no $f)"; fi' >&2 || true
+    die "The colour scheme in ~/.config/kdeglobals is not $scheme after login (plasma-manager; details above)."
+  fi
   ok "Colour scheme $scheme applied at login"
 
   # plasma-manager records each login script that succeeded; the panels (top bar and
