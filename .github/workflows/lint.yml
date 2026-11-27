@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # the Dependabot follow-up starts it on main after a merge
 
 permissions:
   contents: read

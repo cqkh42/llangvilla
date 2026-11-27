@@ -6,8 +6,9 @@ name: Dependabot follow-up
 #   - Nix bumps (dependabot/nix/…) are left alone: the VM test runs on their PR by
 #     itself (vm-test.yml, pull_request), and a person merges them once it is green,
 #     since they change what the machine runs.
-# Runs in the base repository's context (workflow_run), so it never checks out or runs
-# the PR's code; it only calls the GitHub API.
+# After a merge it starts Lint on main: a merge made with this workflow's token
+# triggers no push workflows. Runs in the base repository's context (workflow_run),
+# so it never checks out or runs the PR's code; it only calls the GitHub API.
 on:
   workflow_run:
     workflows: [Lint]
@@ -16,6 +17,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write   # to start Lint on main after the merge
 
 jobs:
   follow-up:
@@ -31,7 +33,7 @@ jobs:
       BRANCH: ${{ github.event.workflow_run.head_branch }}
       SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Merge
+      - name: Merge, then lint main
         run: |
           set -euo pipefail
           # The open PR for this branch, by Dependabot, still at the commit lint passed.
@@ -43,3 +45,5 @@ jobs:
 
           gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f merge_method=squash -f sha="$SHA" \
             --jq '"Merged #'"$pr"': \(.message)"'
+          gh api -X POST "repos/$REPO/actions/workflows/lint.yml/dispatches" -f ref=main
+          echo "Started Lint on main."

@@ -40,7 +40,10 @@ lint-yaml:
 	yamllint .
 
 lint-ansible:
-	ansible-lint config/ansible
+	@# From the repo root, so .ansible-lint picks the files. Deprecation warnings off for
+	@# ansible-lint only: it loads every callback plugin in ansible-core, and two of those
+	@# are deprecated. The syntax check below keeps them, for the playbook's own.
+	ANSIBLE_DEPRECATION_WARNINGS=False ansible-lint
 	cd config/ansible && ANSIBLE_CONFIG=ansible.cfg ansible-playbook --syntax-check site.yml
 
 lint-nix:
