@@ -163,3 +163,10 @@ Entries 1–19 come from the holistic review of November 2026; 20–26 from its 
 **Decision:** the `home_manager` role installs `qt6-tools` and links `/usr/local/bin/qdbus` to Qt 6's `qdbus`. The VM test checks it is on the PATH and that plasma-manager's panel and wallpaper scripts succeeded at login.
 
 **Why:** plasma-manager is written for NixOS, where `qdbus` is on the PATH; on Arch it is `qdbus6`. Its desktop scripts (panels, wallpaper) failed at every login without a trace, so the first look at the VM showed Plasma's default panel and wallpaper, while the settings written to files (colours, fonts, buttons) were in place and the test passed. A link is smaller than pulling Nix's Qt tools into the user layer, and system-wide it is on the session's PATH however Plasma starts.
+
+## 28. A Global Theme of our own; Colloid's Plasma style patched
+
+**Decision:** the `theme` role writes a Global Theme, `org.llangvilla.colloid-dark` (id in `theme.json`): the Colloid parts with Breeze widgets, defaults and previews only. `plasma.nix` makes it the current one and Plasma's default light and dark one. The role installs Colloid's Plasma style through a script that removes the SVGs' stale colour stylesheets. Widgets stay Breeze, not Kvantum.
+
+**Why:** with no Global Theme set, Plasma assumed Breeze, so its light/dark switch in the tray went to Breeze Dark and dropped Colloid. Colloid's own Global Theme sets Kvantum widgets. The panel, dock and tray icons were light under ColloidDark because many of Colloid's SVGs carry extra copies of the colour stylesheet with Breeze Light's colours: Plasma replaces only the first, and the later copies win. That bug is in the Plasma style itself, so Kvantum would not have fixed it.
+

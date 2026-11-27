@@ -1,8 +1,9 @@
 ---
 # Installs Colloid dark into /usr/share: Plasma style, window decorations (Mac-style
-# buttons), colour scheme, icons, cursors and the GTK theme. Not the look-and-feel
-# package: its defaults switch widgets to Kvantum, which is not used. Selecting
-# them is the user layer's job (home-manager); the login screen is login_screen's.
+# buttons), colour scheme, icons, cursors and the GTK theme, plus a Global Theme of
+# our own that bundles them with Breeze widgets (Colloid's own one switches widgets
+# to Kvantum, which is not used). Selecting them is the user layer's job
+# (home-manager); the login screen is login_screen's.
 - name: Install what the theme installers need
   community.general.pacman:
     name: [git, sassc]
@@ -53,7 +54,6 @@
   loop:
     - /usr/share/aurorae/themes/Colloid-dark
     - /usr/share/color-schemes/ColloidDark.colors
-    - /usr/share/plasma/desktoptheme/Colloid-dark
   when: not theme_stamps.results[0].stat.exists
 
 - name: Remove the previous Colloid cursors (the pinned commit changed)
@@ -73,7 +73,6 @@
   loop:
     - /usr/share/aurorae/themes/Colloid-dark
     - /usr/share/color-schemes
-    - /usr/share/plasma/desktoptheme/Colloid-dark
 
 - name: Install the Colloid Plasma parts
   ansible.builtin.copy:
@@ -87,10 +86,22 @@
     - {src: aurorae/Colloid-dark/, dest: /usr/share/aurorae/themes/Colloid-dark/}
     - {src: aurorae/common/, dest: /usr/share/aurorae/themes/Colloid-dark/}
     - {src: color-schemes/ColloidDark.colors, dest: /usr/share/color-schemes/ColloidDark.colors}
-    - {src: plasma/desktoptheme/Colloid-dark/, dest: /usr/share/plasma/desktoptheme/Colloid-dark/}
-    - {src: plasma/desktoptheme/icons, dest: /usr/share/plasma/desktoptheme/Colloid-dark/}
   loop_control:
     label: "{{ item.dest }}"
+
+# The Plasma style is copied by a script that also removes stale colour stylesheets
+# from its SVGs (the script says why): without that, the panel, dock and tray stay
+# light under a dark scheme. It replaces the whole directory, once per pinned commit.
+- name: Install the Colloid Plasma style, without its stale colour stylesheets
+  ansible.builtin.script:
+    cmd: >-
+      install-plasma-style.py
+      {{ theme_src_dir }}/colloid-kde/plasma/desktoptheme/Colloid-dark
+      {{ theme_src_dir }}/colloid-kde/plasma/desktoptheme/icons
+      /usr/share/plasma/desktoptheme/Colloid-dark
+      {{ theme_stamp_dir }}/colloid-plasma-style-{{ theme_colloid_kde_version }}
+    executable: python3
+    creates: "{{ theme_stamp_dir }}/colloid-plasma-style-{{ theme_colloid_kde_version }}"
 
 - name: Install the Colloid cursors (light and dark)
   ansible.builtin.copy:
@@ -133,6 +144,45 @@
     cmd: ./install.sh --dest /usr/share/themes --color dark && touch "{{ theme_stamp_dir }}/colloid-gtk-{{ theme_colloid_gtk_version }}"
     chdir: "{{ theme_src_dir }}/colloid-gtk"
     creates: "{{ theme_stamp_dir }}/colloid-gtk-{{ theme_colloid_gtk_version }}"
+
+# A Global Theme (look-and-feel package) of our own: the Colloid parts named in
+# theme.json with Breeze widgets. plasma.nix makes it the current one and Plasma's
+# default light and dark one, so the tray's light/dark switch keeps Colloid. Only
+# defaults and previews; Plasma falls back to Breeze for the rest (splash, lock and
+# logout screens), and there is no layout, so applying it never touches the panels.
+- name: Create the Colloid Global Theme's directories
+  ansible.builtin.file:
+    path: "{{ theme_lnf_dir }}/contents/previews"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the Colloid Global Theme's metadata
+  ansible.builtin.copy:
+    dest: "{{ theme_lnf_dir }}/metadata.json"
+    content: "{{ theme_lnf_metadata | to_nice_json(indent=4) }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the Colloid Global Theme's defaults
+  ansible.builtin.template:
+    src: look-and-feel-defaults.j2
+    dest: "{{ theme_lnf_dir }}/contents/defaults"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Copy Colloid's previews into the Global Theme
+  ansible.builtin.copy:
+    src: "{{ theme_src_dir }}/colloid-kde/plasma/look-and-feel/com.github.vinceliuice.Colloid-dark/contents/previews/{{ item }}"
+    dest: "{{ theme_lnf_dir }}/contents/previews/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [preview.png, fullscreenpreview.jpg]
 
 # Retired: earlier versions installed Colloid's look-and-feel package. Keep this until
 # the machine has applied it once, then delete it (config/README.md, Removing things).

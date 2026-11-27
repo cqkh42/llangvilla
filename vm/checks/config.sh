@@ -8,7 +8,7 @@
 # shellcheck disable=SC2329
 # No pipefail: checks like `cmd | grep -q` must not fail when grep exits early.
 set -u
-: "${PW:?}" "${KEYBOARD:?}" "${SCHEME:?}" "${ICONS:?}" "${GTK:?}" "${PLASMA:?}" "${DECO:?}"
+: "${PW:?}" "${KEYBOARD:?}" "${LNF:?}" "${SCHEME:?}" "${ICONS:?}" "${GTK:?}" "${PLASMA:?}" "${DECO:?}"
 : "${CURSOR:?}" "${CURSOR_SIZE:?}" "${FONT:?}" "${FONT_SIZE:?}" "${WP_NAME:?}" "${WP_SIZE:?}"
 USER=${USER:-$(id -un)}   # set by SSH logins, but not guaranteed
 fails=0
@@ -38,6 +38,18 @@ check "wallpaper package $WP_NAME"       test -f "$img" -a -f "/usr/share/wallpa
 check "window decoration $DECO"          test -d "/usr/share/aurorae/themes/$DECO"
 check "colour scheme $SCHEME"            test -f "/usr/share/color-schemes/$SCHEME.colors"
 check "Plasma style $PLASMA"             test -d "/usr/share/plasma/desktoptheme/$PLASMA"
+# The theme role strips Colloid's stale stylesheets, which would keep the panel light:
+# no SVG may define .ColorScheme-Background more than once.
+stale_styles() {
+  local f n bad=0
+  while IFS= read -r -d '' f; do
+    n=$(zcat -f "$f" | grep -c '\.ColorScheme-Background *{')
+    (( n > 1 )) && { echo "$f"; bad=1; }
+  done < <(find "/usr/share/plasma/desktoptheme/$PLASMA" -name '*.svg*' -print0)
+  return $bad
+}
+check "Plasma style: one colour stylesheet per SVG" stale_styles
+check "Global Theme $LNF"                test -f "/usr/share/plasma/look-and-feel/$LNF/metadata.json" -a -f "/usr/share/plasma/look-and-feel/$LNF/contents/defaults"
 check "icons $ICONS"                     test -f "/usr/share/icons/$ICONS/index.theme"
 check "cursors $CURSOR"                  test -d "/usr/share/icons/$CURSOR/cursors"
 check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0"
@@ -55,6 +67,9 @@ check "qdbus on the PATH (plasma-manager)" command -v qdbus
 check "home-manager generation"          test -L "$HOME/.local/state/nix/profiles/home-manager"
 check "keyboard layout $KEYBOARD (kxkbrc)" grep -qx "LayoutList=$KEYBOARD" "$HOME/.config/kxkbrc"
 check "window buttons on the left"       grep -qx 'ButtonsOnLeft=XIA' "$HOME/.config/kwinrc"
+for key in LookAndFeelPackage DefaultLightLookAndFeel DefaultDarkLookAndFeel; do
+  check "Global Theme $LNF ($key)"       grep -qx "$key=$LNF" "$HOME/.config/kdeglobals"
+done
 check "window decoration selected"       grep -qx "theme=__aurorae__svg__$DECO" "$HOME/.config/kwinrc"
 check "interface font $FONT $FONT_SIZE"  grep -q "^font=$FONT,$FONT_SIZE," "$HOME/.config/kdeglobals"
 for app in dolphinrc katerc arkrc; do

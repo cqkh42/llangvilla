@@ -651,7 +651,7 @@ import json, shlex, sys
 t = json.load(open(sys.argv[1]))
 h = json.load(open(sys.argv[3]))
 v = {
-    "PW": sys.argv[2], "KEYBOARD": h["keyboardLayout"],
+    "PW": sys.argv[2], "KEYBOARD": h["keyboardLayout"], "LNF": t["lookAndFeel"],
     "SCHEME": t["colorScheme"], "ICONS": t["iconTheme"], "GTK": t["gtkTheme"],
     "PLASMA": t["plasmaTheme"], "DECO": t["windowDecoration"].removeprefix("__aurorae__svg__"),
     "CURSOR": t["cursor"]["theme"], "CURSOR_SIZE": str(t["cursor"]["size"]),

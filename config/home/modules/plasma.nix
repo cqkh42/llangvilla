@@ -18,8 +18,8 @@ in
       theme = theme.plasmaTheme;
       inherit (theme) colorScheme iconTheme;
       cursor = { inherit (theme.cursor) theme size; };
-      # Breeze widgets coloured by the Colloid scheme; Colloid's look-and-feel
-      # package would switch widgets to Kvantum, which is not used.
+      # Breeze widgets coloured by the Colloid scheme; Colloid's own Global Theme
+      # would switch widgets to Kvantum, which is not used.
       widgetStyle = "Breeze";
       windowDecorations = {
         library = "org.kde.kwin.aurorae";
@@ -102,5 +102,16 @@ in
     krunner.shortcuts.launch = "Meta+Space";
 
     kscreenlocker.appearance.wallpaper = wallpaper;
+
+    # The Global Theme (installed by Ansible's theme role, the parts above with
+    # Breeze widgets): the current one, and the one Plasma's light/dark switch
+    # (tray, System Settings) uses for both, so switching never leaves Colloid.
+    # Set as keys, not workspace.lookAndFeel: that runs plasma-apply-lookandfeel at
+    # every login, and the parts are already applied one by one above.
+    configFile.kdeglobals.KDE = {
+      LookAndFeelPackage = theme.lookAndFeel;
+      DefaultLightLookAndFeel = theme.lookAndFeel;
+      DefaultDarkLookAndFeel = theme.lookAndFeel;
+    };
   };
 }
