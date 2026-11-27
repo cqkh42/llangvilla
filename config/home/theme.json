@@ -1,4 +1,5 @@
 {
+  "lookAndFeel": "org.llangvilla.colloid-dark",
   "colorScheme": "ColloidDark",
   "plasmaTheme": "Colloid-dark",
   "windowDecoration": "__aurorae__svg__Colloid-dark",

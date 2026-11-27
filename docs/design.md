@@ -34,7 +34,8 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 
 | Part | Uses | Installed by | Selected by |
 |---|---|---|---|
-| Plasma style and window decorations | Colloid dark | `theme` (Ansible) | `plasma.nix` |
+| Global Theme | "Colloid Dark", ours: the parts below with Breeze widgets; current, and the default for light and dark | `theme` (Ansible) | `plasma.nix` |
+| Plasma style and window decorations | Colloid dark | `theme` | `plasma.nix` |
 | Colour scheme | Colloid's own dark scheme, blue accent | `theme` | `plasma.nix`; the login screen by `login_screen` |
 | Qt widgets | Breeze, coloured by the scheme (not Kvantum) | the base | `plasma.nix` |
 | GTK 3 and 4 | Colloid-gtk, dark | `theme` | `gtk.nix` |

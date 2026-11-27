@@ -155,12 +155,15 @@ The `theme` role installs Colloid dark into `/usr/share`, so the login screen, w
 | Plasma style, window decorations, colour scheme | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark` |
 | Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
 | GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
+| Global Theme | Ours: the parts above with Breeze widgets, Colloid's previews | `org.llangvilla.colloid-dark` ("Colloid Dark") |
 
 Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in one place, `config/home/theme.json`: the login screen (`login_screen` role) and the desktop and GTK apps (`plasma.nix`, `gtk.nix`) all read it, so they can't drift apart. It lives in `config/home` because the Nix flake can only read files inside its own directory.
 
 Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply. The weekly upstream check opens an issue with the commit to paste when there's a newer one ([dependency bumps](../docs/maintenance.md#dependency-bumps)).
 
-Colloid's look-and-feel package is not installed: its defaults name Kvantum as the widget style, and Kvantum is not used. `plasma.nix` selects the parts individually instead.
+Colloid's own Global Theme (look-and-feel package) is not installed: its defaults name Kvantum as the widget style, and Kvantum is not used. The role writes a Global Theme of its own instead, from `theme.json` (`roles/theme/templates/look-and-feel-defaults.j2`). `plasma.nix` still selects each part individually, and makes this Global Theme the current one and Plasma's default for both light and dark, so the tray's light/dark switch stays on Colloid. It has no layout, so applying it in System Settings leaves the panels alone.
+
+The Plasma style isn't copied as-is: `roles/theme/files/install-plasma-style.py` removes stale colour stylesheets from Colloid's SVGs, which otherwise keep the panel, dock and tray light whatever the colour scheme. It runs once per pinned commit, like the icon and GTK installers.
 
 ## Snapshots
 

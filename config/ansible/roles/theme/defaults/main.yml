@@ -12,3 +12,16 @@ theme_colloid_gtk_version: 6c2dc65865628bda9fdc8157a30cd5eda6fd41f9     # tag 20
 # Where the sources are checked out, and the stamps that mark an installed version.
 theme_src_dir: /var/lib/llangvilla/src
 theme_stamp_dir: /var/lib/llangvilla/stamps
+
+# Our Global Theme (look-and-feel package): its id comes from theme.json (`look`).
+theme_lnf_dir: /usr/share/plasma/look-and-feel/{{ look.lookAndFeel }}
+theme_lnf_metadata:
+  KPackageStructure: Plasma/LookAndFeel
+  KPlugin:
+    Id: "{{ look.lookAndFeel }}"
+    Name: Colloid Dark
+    Description: Colloid dark with Breeze widgets (llangvilla)
+    Authors: [{Name: llangvilla}]
+    Category: ""
+    License: GPL-3.0-or-later
+    Website: https://github.com/vinceliuice/Colloid-kde

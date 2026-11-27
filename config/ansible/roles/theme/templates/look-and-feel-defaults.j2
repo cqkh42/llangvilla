@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+# What applying the Colloid Global Theme sets (System Settings, or the tray's
+# light/dark switch). The names come from config/home/theme.json; keep the rest in
+# step with config/home/modules/plasma.nix.
+[kdeglobals][General]
+ColorScheme={{ look.colorScheme }}
+
+[kdeglobals][Icons]
+Theme={{ look.iconTheme }}
+
+[kdeglobals][KDE]
+widgetStyle=Breeze
+
+[plasmarc][Theme]
+name={{ look.plasmaTheme }}
+
+[kcminputrc][Mouse]
+cursorTheme={{ look.cursor.theme }}
+cursorSize={{ look.cursor.size }}
+
+[kwinrc][org.kde.kdecoration2]
+library=org.kde.kwin.aurorae
+theme={{ look.windowDecoration }}
+ButtonsOnLeft=XIA
+ButtonsOnRight=
+
+[ksplashrc][KSplash]
+Engine=none
+Theme=None
