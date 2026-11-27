@@ -1,7 +1,5 @@
 # Secrets and build output: never commit these (installer/README.md, Security)
 autoinstall.env
-user_credentials.json
-user_configuration.json
 *.iso
 *.qcow2
 

@@ -31,9 +31,9 @@ mesa vulkan-intel vulkan-radeon vulkan-nouveau intel-media-driver libva-intel-dr
 # --- bluetooth
 bluez bluez-utils
 
-# --- tools. nano stays in the base: an editor for rescue work before the config
-# (and vim) has run. Build tools, man pages and reflector come from the config.
-git nano
+# --- an editor for rescue work before the config (and vim) has run. git comes from
+# install.sh with the first-boot hook; build tools, man pages and reflector from the config.
+nano
 
 # --- media codecs
 gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav ffmpeg

@@ -67,13 +67,13 @@ load_env() {
   # shellcheck source=/dev/null
   source "$1" || die "Could not read $1."
   : "${WIFI_SSID:=}" "${WIFI_PSK:=}" "${WIFI_HIDDEN:=0}"
-  : "${TARGET_DISK:=auto}" "${CONFIRM_SECONDS:=30}" "${NONBLANK_DISK:=ask}" "${ROOT_FS:=btrfs}"
+  : "${TARGET_DISK:=auto}" "${CONFIRM_SECONDS:=30}" "${NONBLANK_DISK:=ask}"
   : "${HOST_NAME:=archlinux}" "${TIMEZONE:=UTC}" "${LOCALE:=en_US.UTF-8}" "${KEYMAP:=us}" "${X11_KEYMAP:=}"
   : "${KERNELS:=linux}" "${EXTRA_PACKAGES:=}"
   : "${USER_NAME:=}" "${REAL_NAME:=}" "${PASSWORD_HASH:=}" "${LOCK_ROOT:=1}"
   : "${ENABLE_SSH:=1}" "${SSH_KEYS_URL:=}" "${SSH_AUTHORIZED_KEYS:=}" "${SSH_PASSWORD_AUTH:=0}"
   : "${CONFIG_REPO_URL:=}" "${CONFIG_REPO_BRANCH:=}" "${CONFIG_ENTRYPOINT:=config/apply.sh}"
-  : "${FIRSTBOOT_BEFORE_LOGIN:=1}" "${FIRSTBOOT_REBOOT_AFTER:=1}"
+  : "${FIRSTBOOT_REBOOT_AFTER:=1}"
   : "${ON_FAILURE:=shell}"
 }
 
@@ -85,17 +85,10 @@ check_config() {
     errs+=("placeholder not filled in: ${line}")
   done < <(grep -nE '^[^#]*__[A-Z_]+__' "$env_file")
 
-  # Settings from before the first-boot hook was made generic: fail rather than
-  # silently skipping the config on a stick with an old env file.
-  while IFS= read -r line; do
-    errs+=("${line}: the ANSIBLE_* settings were renamed (CONFIG_REPO_URL, CONFIG_REPO_BRANCH, CONFIG_ENTRYPOINT, FIRSTBOOT_*); see autoinstall.env.example")
-  done < <(grep -nE '^[[:space:]]*ANSIBLE_[A-Z_]+=' "$env_file")
-
-  for v in WIFI_HIDDEN LOCK_ROOT ENABLE_SSH SSH_PASSWORD_AUTH FIRSTBOOT_BEFORE_LOGIN FIRSTBOOT_REBOOT_AFTER; do
+  for v in WIFI_HIDDEN LOCK_ROOT ENABLE_SSH SSH_PASSWORD_AUTH FIRSTBOOT_REBOOT_AFTER; do
     [[ ${!v} == 0 || ${!v} == 1 ]] || errs+=("$v must be 0 or 1 (is '${!v}')")
   done
   [[ $CONFIRM_SECONDS =~ ^[0-9]+$ ]] || errs+=("CONFIRM_SECONDS must be a number of seconds")
-  [[ $ROOT_FS == btrfs || $ROOT_FS == ext4 ]] || errs+=("ROOT_FS must be btrfs or ext4")
   [[ $NONBLANK_DISK == ask || $NONBLANK_DISK == wipe ]] || errs+=("NONBLANK_DISK must be ask or wipe")
   [[ $ON_FAILURE == shell || $ON_FAILURE == poweroff ]] || errs+=("ON_FAILURE must be shell or poweroff")
   [[ $TARGET_DISK == auto || $TARGET_DISK == /dev/* ]] || errs+=("TARGET_DISK must be auto or a /dev/... path")
@@ -139,7 +132,7 @@ if [[ ${1:-} == --check ]]; then
   [[ -n ${2:-} && -f ${2:-} ]] || die "Usage: install.sh --check /path/to/autoinstall.env"
   load_env "$2"
   check_config "$2" || exit 1
-  echo "OK: $2 looks valid (host '$HOST_NAME', user '$USER_NAME', $ROOT_FS, disk $TARGET_DISK)."
+  echo "OK: $2 looks valid (host '$HOST_NAME', user '$USER_NAME', disk $TARGET_DISK)."
   exit 0
 fi
 
@@ -255,7 +248,7 @@ UCODE=""
 if grep -q GenuineIntel /proc/cpuinfo; then UCODE=intel-ucode; fi
 if grep -q AuthenticAMD /proc/cpuinfo; then UCODE=amd-ucode; fi
 [[ -n $UCODE ]] && PKGS+=("$UCODE")
-[[ $ROOT_FS == btrfs ]] && PKGS+=(btrfs-progs)
+PKGS+=(btrfs-progs)
 [[ $ENABLE_SSH == 1 ]] && PKGS+=(openssh)
 [[ -n $CONFIG_REPO_URL ]] && PKGS+=(git)
 read -ra extra <<<"$EXTRA_PACKAGES"
@@ -274,18 +267,13 @@ if ! pacman -Sp --noconfirm --dbpath "$WORK/pacdb" --print-format '%n' "${PKGS[@
 fi
 
 # ---------------------------------------------------------------- 5. choose and confirm the target disk
+# The largest internal (non-USB) disk of at least 40 GiB. jq is on the ISO (build.sh).
 pick_disk() {
-  local best="" bestsize=0 line NAME SIZE TYPE TRAN
-  while read -r line; do
-    eval "$line"
-    [[ $TYPE == disk ]] || continue
-    [[ $TRAN == usb ]] && continue
-    [[ $NAME == "$USB_DISK" ]] && continue
-    [[ $NAME == /dev/zram* || $NAME == /dev/sr* || $NAME == /dev/ram* ]] && continue
-    (( SIZE >= 40 * 1024 * 1024 * 1024 )) || continue
-    if (( SIZE > bestsize )); then best=$NAME; bestsize=$SIZE; fi
-  done < <(lsblk -dpnb -P -o NAME,SIZE,TYPE,TRAN)
-  echo "$best"
+  lsblk -dpnbJ -o NAME,SIZE,TYPE,TRAN | jq -r --arg usb "$USB_DISK" --argjson min $((40 * 1024 ** 3)) '
+    [.blockdevices[]
+     | select(.type == "disk" and .tran != "usb" and .name != $usb and .size >= $min
+              and (.name | test("^/dev/(zram|sr|ram)") | not))]
+    | max_by(.size) | .name // empty'
 }
 
 # Blank = no partitions and no filesystem/partition-table signature on the disk.
@@ -298,7 +286,7 @@ if [[ $TARGET_DISK == auto ]]; then TARGET=$(pick_disk); else TARGET=$(readlink 
 [[ $TARGET != "$USB_DISK" ]] || die "Refusing to install onto the USB stick itself."
 [[ $(lsblk -dno TYPE "$TARGET") == disk ]] || die "$TARGET is not a whole disk."
 
-say "PLAN: host '$HOST_NAME', user '$USER_NAME', $ROOT_FS root, kernels: $KERNELS, ${#PKGS[@]} packages"
+say "PLAN: host '$HOST_NAME', user '$USER_NAME', btrfs root, kernels: $KERNELS, ${#PKGS[@]} packages"
 say "TARGET DISK: $TARGET"
 lsblk -o NAME,SIZE,MODEL,SERIAL,TRAN,FSTYPE,LABEL "$TARGET"
 
@@ -341,26 +329,22 @@ ESP=${PARTS[0]:-}; ROOT=${PARTS[1]:-}
 wipefs -af "$ESP" "$ROOT" >/dev/null
 mkfs.fat -F32 -n EFI "$ESP" >/dev/null || die "mkfs.fat failed."
 
-if [[ $ROOT_FS == ext4 ]]; then
-  mkfs.ext4 -F -L archroot "$ROOT" >/dev/null || die "mkfs.ext4 failed."
-  must_mount "$ROOT" "$T"
-else
-  mkfs.btrfs -f -L archroot "$ROOT" >/dev/null || die "mkfs.btrfs failed."
-  mkdir -p /mnt/btrfs-top
-  must_mount "$ROOT" /mnt/btrfs-top
-  for sv in @ @home @log @pkg @.snapshots; do
-    btrfs subvolume create "/mnt/btrfs-top/$sv" >/dev/null || die "Creating btrfs subvolume $sv failed."
-  done
-  umount /mnt/btrfs-top || die "Could not unmount the btrfs top level."
+# btrfs only: the config's snapshots before upgrades need it (docs/decisions.md, 21).
+mkfs.btrfs -f -L archroot "$ROOT" >/dev/null || die "mkfs.btrfs failed."
+mkdir -p /mnt/btrfs-top
+must_mount "$ROOT" /mnt/btrfs-top
+for sv in @ @home @log @pkg @.snapshots; do
+  btrfs subvolume create "/mnt/btrfs-top/$sv" >/dev/null || die "Creating btrfs subvolume $sv failed."
+done
+umount /mnt/btrfs-top || die "Could not unmount the btrfs top level."
 
-  OPTS="noatime,compress=zstd:3"
-  must_mount -o "$OPTS,subvol=@" "$ROOT" "$T"
-  mkdir -p "$T"/{home,var/log,var/cache/pacman/pkg,.snapshots}
-  must_mount -o "$OPTS,subvol=@home"       "$ROOT" "$T/home"
-  must_mount -o "$OPTS,subvol=@log"        "$ROOT" "$T/var/log"
-  must_mount -o "$OPTS,subvol=@pkg"        "$ROOT" "$T/var/cache/pacman/pkg"
-  must_mount -o "$OPTS,subvol=@.snapshots" "$ROOT" "$T/.snapshots"
-fi
+OPTS="noatime,compress=zstd:3"
+must_mount -o "$OPTS,subvol=@" "$ROOT" "$T"
+mkdir -p "$T"/{home,var/log,var/cache/pacman/pkg,.snapshots}
+must_mount -o "$OPTS,subvol=@home"       "$ROOT" "$T/home"
+must_mount -o "$OPTS,subvol=@log"        "$ROOT" "$T/var/log"
+must_mount -o "$OPTS,subvol=@pkg"        "$ROOT" "$T/var/cache/pacman/pkg"
+must_mount -o "$OPTS,subvol=@.snapshots" "$ROOT" "$T/.snapshots"
 mkdir -p "$T/boot"
 must_mount -o fmask=0077,dmask=0077 "$ESP" "$T/boot"   # root-only, as bootctl expects
 
@@ -491,7 +475,9 @@ if [[ -n $CONFIG_REPO_URL ]]; then
     echo 'set -euo pipefail'
     printf 'url=%q branch=%q entry=%q dir=/opt/llangvilla\n' \
       "$CONFIG_REPO_URL" "$CONFIG_REPO_BRANCH" "$CONFIG_ENTRYPOINT"
-    cat <<'EOF'
+    # The script itself. `make lint-shell` checks this part with ShellCheck, finding
+    # it by the FIRSTBOOT delimiter.
+    cat <<'FIRSTBOOT'
 # On failure, say so where you will see it: the text console (/etc/issue.d) and
 # SSH or console logins (/etc/motd.d). Cleared by the next successful run.
 notice=llangvilla-firstboot
@@ -520,23 +506,16 @@ if [[ ! -d $dir/.git ]]; then
   done
 fi
 bash "$dir/$entry"
-EOF
+FIRSTBOOT
   } > "$T/usr/local/lib/llangvilla/firstboot.sh"
   chmod 755 "$T/usr/local/lib/llangvilla/firstboot.sh"
 
-  unit_before="" unit_reboot="" unit_extra=""
-  if [[ $FIRSTBOOT_BEFORE_LOGIN == 1 ]]; then
-    # Run to completion BEFORE the login screen (the display manager) starts. A failure
-    # does not block it; the unit simply tries again on the next boot. plasmalogin is
-    # named as well as the display-manager alias, so the order holds either way.
-    # No time limit: killing the run mid `pacman -Syu` could break the system. While it
-    # runs, SSH and the text consoles (Ctrl+Alt+F2) work.
-    unit_before="Before=display-manager.service plasmalogin.service"
-    unit_extra=$'TimeoutStartSec=infinity\nStandardOutput=journal+console\nStandardError=journal+console'
-  else
-    # Run in the background while the login screen is already showing; retry every 60 s.
-    unit_extra=$'Restart=on-failure\nRestartSec=60'
-  fi
+  # Runs to completion BEFORE the login screen (the display manager) starts. A failure
+  # does not block it; the unit simply tries again on the next boot. plasmalogin is
+  # named as well as the display-manager alias, so the order holds either way.
+  # No time limit: killing the run mid `pacman -Syu` could break the system. While it
+  # runs, SSH and the text consoles (Ctrl+Alt+F2) work.
+  unit_reboot=""
   # Reboot once after a SUCCESSFUL run. The done-marker is written first, so this can never loop.
   [[ $FIRSTBOOT_REBOOT_AFTER == 1 ]] && unit_reboot="ExecStartPost=/usr/bin/systemctl reboot --no-block"
   cat > "$T/etc/systemd/system/llangvilla-firstboot.service" <<EOF
@@ -544,7 +523,7 @@ EOF
 Description=First-boot hand-over to the config repo
 After=network-online.target
 Wants=network-online.target
-$unit_before
+Before=display-manager.service plasmalogin.service
 ConditionPathExists=!/var/lib/llangvilla/firstboot.done
 
 [Service]
@@ -554,7 +533,9 @@ ExecStart=/usr/local/lib/llangvilla/firstboot.sh
 ExecStartPost=/usr/bin/mkdir -p /var/lib/llangvilla
 ExecStartPost=/usr/bin/touch /var/lib/llangvilla/firstboot.done
 $unit_reboot
-$unit_extra
+TimeoutStartSec=infinity
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target
@@ -577,8 +558,7 @@ in_target bootctl install || in_target bootctl --no-variables install || die "bo
 ROOT_UUID=$(blkid -s UUID -o value "$ROOT")
 [[ -n $ROOT_UUID ]] || die "Could not read the root filesystem's UUID."
 # zswap off: swap is zram, and zswap in front of it only adds overhead (Arch wiki, zram).
-options="root=UUID=$ROOT_UUID rw zswap.enabled=0"
-[[ $ROOT_FS == btrfs ]] && options+=" rootflags=subvol=@"
+options="root=UUID=$ROOT_UUID rw rootflags=subvol=@ zswap.enabled=0"
 
 # Current mkinitcpio embeds microcode via its 'microcode' hook; older configs need an initrd line.
 ucode_line=""

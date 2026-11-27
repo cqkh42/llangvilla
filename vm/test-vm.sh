@@ -91,8 +91,6 @@ while [[ $# -gt 0 ]]; do
     --iso)       iso=$2; shift ;;
     --env)       base_env=$2; shift ;;
     --no-firstboot) firstboot=0 ;;
-    --firstboot) die "--firstboot is now the default, and uses the working tree (not GitHub). Use --no-firstboot to skip the hook." ;;
-    --ansible)   die "--ansible was replaced by the first-boot hook (the default) and the 'config' command" ;;
     --baked)     baked=1 ;;
     --stick)     stick_dev=$2; shift ;;
     --gui)       gui=1 ;;
@@ -469,9 +467,9 @@ do_check() {
 
   step "Checking the base system"
   # Expected values go in as environment variables; the checks run on the VM.
-  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_FS=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_FIRSTBOOT=%q EXP_LOCK_ROOT=%q bash -s' \
+  printf -v remote 'PW=%q EXP_HOST=%q EXP_USER=%q EXP_REAL=%q EXP_TZ=%q EXP_LOCALE=%q EXP_KERNELS=%q EXP_WIFI=%q EXP_SSH_PW=%q EXP_FIRSTBOOT=%q EXP_LOCK_ROOT=%q bash -s' \
     "$test_password" "$(env_value HOST_NAME)" "$vm_user" "$(env_value REAL_NAME)" \
-    "$(env_value ROOT_FS btrfs)" "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
+    "$(env_value TIMEZONE)" "$(env_value LOCALE)" "$(env_value KERNELS linux)" \
     "$(env_value WIFI_SSID)" "$(env_value SSH_PASSWORD_AUTH 0)" "$(env_value CONFIG_REPO_URL)" "$(env_value LOCK_ROOT 1)"
   # shellcheck disable=SC2029  # expanding on the client side is the point
   # Up to 5 minutes for systemd to settle, 1 for the login screen.
@@ -510,12 +508,10 @@ else fail "systemd" "$state; failed: $(systemctl --failed --no-legend --plain | 
 check "sudo works for $EXP_USER"   s true
 check "hostname is $EXP_HOST"      test "$(cat /etc/hostname)" = "$EXP_HOST"
 check "full name is '$EXP_REAL'"   test "$(getent passwd "$EXP_USER" | cut -d: -f5)" = "$EXP_REAL"
-check "root fs is $EXP_FS"         test "$(findmnt -no FSTYPE /)" = "$EXP_FS"
-if [[ $EXP_FS == btrfs ]]; then
-  check "/ is subvolume @"         bash -c 'findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"'
-  for m in /home /var/log /var/cache/pacman/pkg /.snapshots; do check "$m is mounted" findmnt -n "$m"; done
-  check "fstab has no subvolid="   bash -c '! grep -q subvolid= /etc/fstab'
-fi
+check "root fs is btrfs"           test "$(findmnt -no FSTYPE /)" = btrfs
+check "/ is subvolume @"           bash -c 'findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"'
+for m in /home /var/log /var/cache/pacman/pkg /.snapshots; do check "$m is mounted" findmnt -n "$m"; done
+check "fstab has no subvolid="     bash -c '! grep -q subvolid= /etc/fstab'
 check "/boot is the vfat ESP"      test "$(findmnt -no FSTYPE /boot)" = vfat
 check "systemd-boot is installed"  s bootctl is-installed
 for k in $EXP_KERNELS; do
@@ -809,7 +805,7 @@ do_boot() {
   find_ovmf
   qemu_base "$disk" "$show"
   step "Booting the installed system"
-  info "Log in as $(env_value USER_NAME jack) (password '$test_password' for a test install)"
+  info "Log in as $(env_value USER_NAME) (password '$test_password' for a test install)"
   info "SSH from another terminal: vm/test-vm.sh ssh"
   info "Changes persist on $disk until the next install"
   # Not exec: the first boot after an install clones from the served snapshot.
@@ -836,7 +832,7 @@ do_live() {
 do_ssh() {
   [[ -f $key ]] || die "No test key yet. Run: vm/test-vm.sh install"
   ssh_opts
-  exec ssh "${S[@]}" -o BatchMode=no "$(env_value USER_NAME jack)@127.0.0.1" "${ssh_args[@]}"
+  exec ssh "${S[@]}" -o BatchMode=no "$(env_value USER_NAME)@127.0.0.1" "${ssh_args[@]}"
 }
 
 case $cmd in

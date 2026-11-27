@@ -1,6 +1,6 @@
 # installer
 
-Zero-touch Arch Linux installer on a Ventoy USB stick. Boot the stick and the machine installs itself and powers off, about 15–25 minutes later. The result is a clean base system: user, Wi-Fi, key-only SSH, KDE Plasma, btrfs (or ext4) and systemd-boot. Its first boot hands over to the [config](../config/README.md).
+Zero-touch Arch Linux installer on a Ventoy USB stick. Boot the stick and the machine installs itself and powers off, about 15–25 minutes later. The result is a clean base system: user, Wi-Fi, key-only SSH, KDE Plasma, btrfs and systemd-boot. Its first boot hands over to the [config](../config/README.md).
 
 > [!WARNING]
 > The installer erases the target disk. A disk that already holds data is never erased without someone typing `YES` at the console. The stick holds your Wi-Fi password and a password hash, so keep it physically safe.
@@ -209,7 +209,6 @@ Lives only on the stick, in `arch-autoinstall/`. The template is `autoinstall.en
 | `TARGET_DISK` | `auto` | `auto` = largest internal non-USB disk of at least 40 GB, or a path such as `/dev/disk/by-id/nvme-…`. Pinning is safer |
 | `CONFIRM_SECONDS` | `30` | Countdown before erasing a blank disk. `0` = no wait |
 | `NONBLANK_DISK` | `ask` | `ask` = a disk with data needs `YES`. `wipe` = treat it like a blank disk (dangerous) |
-| `ROOT_FS` | `btrfs` | `btrfs` (with subvolumes) or `ext4` |
 
 To find the OptiPlex's disk ID: boot the stick and press Enter at the `YES` prompt to abort, then run `ls -l /dev/disk/by-id/` at the root shell.
 
@@ -250,7 +249,6 @@ To find the OptiPlex's disk ID: boot the stick and press Enter at the `YES` prom
 | `CONFIG_REPO_URL` | this repo | Repository cloned on first boot. `''` = no hook, plain base system |
 | `CONFIG_REPO_BRANCH` | `''` | Branch to clone; `''` = default branch |
 | `CONFIG_ENTRYPOINT` | `config/apply.sh` | Script to run, relative to the repository root |
-| `FIRSTBOOT_BEFORE_LOGIN` | `1` | `1` = finish before the login screen starts. `0` = run in the background, retrying every 60 s |
 | `FIRSTBOOT_REBOOT_AFTER` | `1` | Reboot once after a successful run |
 
 **Installer**
@@ -275,16 +273,9 @@ This is the only interface between the installer and the config. When `CONFIG_RE
 - writes `/usr/local/lib/llangvilla/firstboot.sh`, which clones the repository to `/opt/llangvilla` (if not already cloned, retrying for about 5 minutes while the network comes up) and runs `CONFIG_ENTRYPOINT`. If either fails, it leaves a notice on the text console (`/etc/issue.d/`) and in the login message (`/etc/motd.d/`, shown over SSH) until a later run succeeds;
 - writes and enables `llangvilla-firstboot.service`, plus `NetworkManager-wait-online.service` so that `network-online.target` waits for the network.
 
-| | `FIRSTBOOT_BEFORE_LOGIN=1` (default) | `FIRSTBOOT_BEFORE_LOGIN=0` |
-|---|---|---|
-| Ordering | `Before=display-manager.service plasmalogin.service` | Runs alongside the login screen |
-| Console | Output shown on the console | Journal only |
-| On failure | The login screen starts anyway, with a notice on the console and in SSH logins; retried on the next boot | Retried every 60 s |
-| Time limit | None: stopping a run mid-upgrade could break the system. SSH and the text consoles (`Ctrl+Alt+F2`) work meanwhile | None |
+The unit runs before the login screen (`Before=display-manager.service plasmalogin.service`), with its output on the console and no time limit: stopping a run mid-upgrade could break the system. SSH and the text consoles (`Ctrl+Alt+F2`) work meanwhile. If it fails, the login screen starts anyway, with a notice on the console and in SSH logins, and the hook runs again on the next boot.
 
-The unit only runs while `/var/lib/llangvilla/firstboot.done` is absent, and that marker is written only on success. With `FIRSTBOOT_REBOOT_AFTER=1` the machine reboots once after success. The marker is written first, so the reboot cannot loop. Don't combine it with `FIRSTBOOT_BEFORE_LOGIN=0`: it could reboot during a session.
-
-An `autoinstall.env` with the old `ANSIBLE_*` settings is rejected by `--check`, with the names of the replacements.
+The unit only runs while `/var/lib/llangvilla/firstboot.done` is absent, and that marker is written only on success. With `FIRSTBOOT_REBOOT_AFTER=1` the machine reboots once after success. The marker is written first, so the reboot cannot loop.
 
 ## Verifying an install
 
@@ -334,7 +325,6 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 | ISO build fails | Usually a network or mirror hiccup; the last 30 lines of output say. Re-run |
 | `ventoy.json exists but does not auto-boot` | Merge the entries from [Ventoy configuration](#4-ventoy-configuration) into the existing file |
 | `Could not mount automatically` | Unplug and replug the stick, then copy the files by hand (see [Write the stick](#2-write-the-stick)) |
-| Warning about `user_configuration.json` / `user_credentials.json` | Leftovers from the old archinstall flow. Delete them; the credentials file holds a password hash |
 
 ### Booting the stick
 
@@ -368,7 +358,7 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 | Wi-Fi not connected | `nmcli device wifi connect SSID password PASS`. Profile: `/etc/NetworkManager/system-connections/autoinstall-wifi.nmconnection` |
 | SSH refused | Key-only by default. Check `~/.ssh/authorized_keys`; the install log shows how many keys were installed |
 | First-boot hook fails | `journalctl -u llangvilla-firstboot.service -b`. Clone errors are the hook's (network, URL, branch); later errors are the [config's](../config/README.md#troubleshooting) |
-| First boot is slow | Expected with `FIRSTBOOT_BEFORE_LOGIN=1`: the config runs before the login screen, with no time limit. Don't power off. Watch it on the console, over SSH or on `Ctrl+Alt+F2` (`journalctl -fu llangvilla-firstboot.service`) |
+| First boot is slow | Expected: the config runs before the login screen, with no time limit. Don't power off. Watch it on the console, over SSH or on `Ctrl+Alt+F2` (`journalctl -fu llangvilla-firstboot.service`) |
 | `First-boot configuration FAILED` on the console or at SSH login | See `/var/log/llangvilla/` and `journalctl -u llangvilla-firstboot.service -b`. Fix, then reboot to retry; the notice goes away after a successful run |
 
 ## Security
@@ -390,4 +380,4 @@ Every run, including failed ones, leaves `logs/install-*.log` and `logs/last-sta
 - No disk encryption, Secure Boot signing or dual boot.
 - The first-boot hook clones over HTTPS without credentials, so the repository must be public.
 - One `autoinstall.env` means one hostname. Change `HOST_NAME` per machine.
-- If anything assumes ext4, set `ROOT_FS=ext4`. There are then no snapshots before upgrades.
+- btrfs only: the config's snapshots before upgrades rely on it.

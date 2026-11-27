@@ -9,10 +9,17 @@
     # in config/home because the Nix flake can only read files inside its directory.
     look: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../home/theme.json') | from_json }}"
   pre_tasks:
+    # Registered, not left in getent_passwd: a later getent (login_screen's) replaces that.
     - name: Check the login user exists (created by the installer)
       ansible.builtin.getent:
         database: passwd
         key: "{{ user_name }}"
+      register: login_user
+      tags: [always]
+
+    - name: Note the login user's home directory
+      ansible.builtin.set_fact:
+        user_home: "{{ login_user.ansible_facts.getent_passwd[user_name][4] }}"
       tags: [always]
   roles:
     - role: packages

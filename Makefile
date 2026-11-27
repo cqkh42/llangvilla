@@ -28,7 +28,13 @@ FLAKE := path:$(CURDIR)/config/home
 lint: lint-shell lint-env lint-yaml lint-ansible lint-nix lint-docs
 
 lint-shell:
-	$(SHELLCHECK) installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh
+	$(SHELLCHECK) installer/*.sh config/*.sh vm/*.sh .github/scripts/*.sh config/ansible/roles/*/files/*.sh
+	@# The first-boot script install.sh writes into the new system, from its FIRSTBOOT
+	@# heredoc, with stand-in values for the variables install.sh fills in.
+	{ printf '#!/bin/bash\nset -euo pipefail\nurl=u branch=b entry=e dir=/opt/llangvilla\n'; \
+	  sed -n "/cat <<'FIRSTBOOT'$$/,/^FIRSTBOOT$$/p" installer/install.sh | sed '1d;$$d'; } \
+	  | $(SHELLCHECK) -
+	@echo "ShellCheck: the scripts and the first-boot script are clean."
 
 lint-env:
 	tmp=$$(mktemp) && trap 'rm -f "$$tmp"' EXIT; \

@@ -1,6 +1,7 @@
 ---
 # Installs Colloid dark into /usr/share: Plasma style, window decorations (Mac-style
-# buttons), colour scheme, look-and-feel, icons, cursors and the GTK theme. Selecting
+# buttons), colour scheme, icons, cursors and the GTK theme. Not the look-and-feel
+# package: its defaults switch widgets to Kvantum, which is not used. Selecting
 # them is the user layer's job (home-manager); the login screen is login_screen's.
 - name: Install what the theme installers need
   community.general.pacman:
@@ -46,7 +47,6 @@
     - /usr/share/aurorae/themes/Colloid-dark
     - /usr/share/color-schemes
     - /usr/share/plasma/desktoptheme/Colloid-dark
-    - /usr/share/plasma/look-and-feel/com.github.vinceliuice.Colloid-dark
 
 - name: Install the Colloid Plasma parts
   ansible.builtin.copy:
@@ -62,8 +62,6 @@
     - {src: color-schemes/ColloidDark.colors, dest: /usr/share/color-schemes/ColloidDark.colors}
     - {src: plasma/desktoptheme/Colloid-dark/, dest: /usr/share/plasma/desktoptheme/Colloid-dark/}
     - {src: plasma/desktoptheme/icons, dest: /usr/share/plasma/desktoptheme/Colloid-dark/}
-    - src: plasma/look-and-feel/com.github.vinceliuice.Colloid-dark/
-      dest: /usr/share/plasma/look-and-feel/com.github.vinceliuice.Colloid-dark/
   loop_control:
     label: "{{ item.dest }}"
 
@@ -94,3 +92,10 @@
     cmd: ./install.sh --dest /usr/share/themes --color dark && touch "{{ theme_stamp_dir }}/colloid-gtk-{{ theme_colloid_gtk_version }}"
     chdir: "{{ theme_src_dir }}/colloid-gtk"
     creates: "{{ theme_stamp_dir }}/colloid-gtk-{{ theme_colloid_gtk_version }}"
+
+# Retired: earlier versions installed Colloid's look-and-feel package. Keep this until
+# the machine has applied it once, then delete it (config/README.md, Removing things).
+- name: Remove the Colloid look-and-feel package (no longer installed)
+  ansible.builtin.file:
+    path: /usr/share/plasma/look-and-feel/com.github.vinceliuice.Colloid-dark
+    state: absent

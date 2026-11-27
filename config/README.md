@@ -112,7 +112,7 @@ config/
 | `login_screen_wallpaper_*` | `roles/login_screen/defaults/main.yml` | `assets/seafront-3840x2160.jpg`; name and size from `look` | Installed as the `Seafront` wallpaper package, used by the login screen, and by the desktop and lock screen (`config/home/modules/plasma.nix`) |
 | `housekeeping_nix_keep` | `roles/housekeeping/defaults/main.yml` | `30d` | Home-manager generations older than this are deleted weekly, then unused Nix store paths: the user layer can be rolled back this far |
 | `home_manager_flake_dir` | `roles/home_manager/defaults/main.yml` | `config/home` next to the playbook | The flake to apply. Its `homeConfigurations` needs an entry named like `user_name` |
-| `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes. Use `/etc/plasmalogin.conf` if PLM ignores drop-ins |
+| `login_screen_config_file` | `roles/login_screen/defaults/main.yml` | `/etc/plasmalogin.conf.d/10-llangvilla.conf` | Where the wallpaper setting goes |
 
 ## User layer
 
@@ -152,7 +152,7 @@ The `theme` role installs Colloid dark into `/usr/share`, so the login screen, w
 
 | Part | From | Installed as |
 |---|---|---|
-| Plasma style, window decorations, colour scheme, look-and-feel | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark`, `com.github.vinceliuice.Colloid-dark` |
+| Plasma style, window decorations, colour scheme | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark` |
 | Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
 | GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
 
@@ -160,7 +160,7 @@ Which installed theme, icons, cursor, fonts and wallpaper are *used* is set in o
 
 Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role checks it out under `/var/lib/llangvilla/src/` and installs it. The icon and GTK installers run once per commit; a stamp in `/var/lib/llangvilla/stamps/` records it. To upgrade, set a newer commit (a release tag's commit where there is one), run `vm/test-vm.sh config`, then apply. The weekly upstream check opens an issue with the commit to paste when there's a newer one ([dependency bumps](../docs/maintenance.md#dependency-bumps)).
 
-The look-and-feel package's defaults name Kvantum as the widget style. Kvantum is not used, so `plasma.nix` applies the look-and-feel's parts individually, not the whole package.
+Colloid's look-and-feel package is not installed: its defaults name Kvantum as the widget style, and Kvantum is not used. `plasma.nix` selects the parts individually instead.
 
 ## Snapshots
 
@@ -168,7 +168,7 @@ Before every upgrade, including first boot's, `apply.sh` takes a read-only btrfs
 
 - **Covered:** `/` (the system, `/etc`, `/usr`, `/var` apart from the next item).
 - **Not covered:** `/home`, `/var/log` and `/var/cache/pacman/pkg` (separate subvolumes), and `/boot` (FAT, see the kernel step below). Nor a `pacman -Syu` you run by hand, or a run with `--no-upgrade`: upgrade with `apply.sh`.
-- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (`ROOT_FS=ext4`).
+- **Skipped** with a note if `/` isn't btrfs or `/.snapshots` isn't a subvolume (a machine not set up by the installer).
 - **If an upgrade broke something, roll back soon.** Each `apply.sh` run takes a new snapshot and drops the oldest, so after three more runs the good one is gone.
 
 List them with `sudo ls /.snapshots/`. To see what changed, compare a directory, e.g. `sudo diff -rq /.snapshots/before-upgrade-<…>/etc /etc`.
@@ -253,7 +253,6 @@ The first run happens before the login screen starts, and every run is as root. 
 | `Check the login user exists` fails | `user_name` doesn't match the installer's `USER_NAME` |
 | `Check Plasma Login Manager is installed` fails | PLM is missing from the base; it comes from `installer/packages.txt` |
 | `Look up the login screen's system user` fails | PLM's system user isn't `plasmalogin`. Find it with `getent passwd \| grep -i login` and set `login_screen_greeter_user` |
-| The login screen keeps the stock wallpaper | PLM ignored the drop-in: set `login_screen_config_file` to `/etc/plasmalogin.conf` |
 | `Apply the user layer` fails | Read the home-manager error in the output. A file it won't replace: move it aside and re-run. A Nix permission error: check `nix-daemon.socket` is running and `allowed-users` in `/etc/nix/nix.conf` (Arch's default lets every local user in) |
 | `Check out each Colloid theme` fails | GitHub unreachable, or a pinned commit no longer exists upstream. Pick another commit |
 | `First-boot configuration FAILED` on the console or at SSH login | The first run failed. Read the newest log in `/var/log/llangvilla/` (or `journalctl -u llangvilla-firstboot.service -b`), fix, then reboot to retry |

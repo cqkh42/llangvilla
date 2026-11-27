@@ -6,6 +6,19 @@
 # switch on a second clash: edit dotfiles in the repo, not on the machine (#18).
 # The first run fetches nixpkgs and downloads from cache.nixos.org: minutes, not
 # seconds. Changed only when the switch produced a new generation.
+# A dry run (apply.sh -- --check) skips the switch below, so build the configuration
+# instead: that catches a broken user layer without changing anything in $HOME.
+- name: Build the user layer without switching (dry runs only)
+  ansible.builtin.command:
+    cmd: nix build "path:{{ home_manager_flake_dir }}#homeConfigurations.{{ user_name }}.activationPackage" --no-link
+  environment:
+    NIX_REMOTE: daemon
+  become: true
+  become_user: "{{ user_name }}"
+  check_mode: false
+  changed_when: false
+  when: ansible_check_mode
+
 - name: Apply the user layer (home-manager switch)
   ansible.builtin.shell:
     cmd: |

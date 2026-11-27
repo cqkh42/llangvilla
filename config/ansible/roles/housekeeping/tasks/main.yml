@@ -7,16 +7,6 @@
     name: [pacman-contrib, fwupd]
     state: present
 
-# Looked up here: a later getent (login_screen's) replaces the earlier results.
-- name: Look up the login user
-  ansible.builtin.getent:
-    database: passwd
-    key: "{{ user_name }}"
-
-- name: Note the login user's home directory
-  ansible.builtin.set_fact:
-    housekeeping_home: "{{ ansible_facts.getent_passwd[user_name][4] }}"
-
 # ---- the package cache: paccache's own timer keeps the last 3 versions of each
 - name: Clean the package cache weekly (last 3 versions kept)
   ansible.builtin.systemd_service:
@@ -43,8 +33,8 @@
     mode: "0755"
 
 - name: Install the firmware check
-  ansible.builtin.template:
-    src: llangvilla-firmware-check.sh.j2
+  ansible.builtin.copy:
+    src: llangvilla-firmware-check.sh
     dest: /usr/local/lib/llangvilla/firmware-check.sh
     owner: root
     group: root
