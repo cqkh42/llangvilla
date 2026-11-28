@@ -75,7 +75,10 @@ in
             # switch has nothing to switch (one Global Theme for both) and can't be
             # hidden on its own. Brightness and Night Light stay in System Settings.
             # Listing it as known but not extra keeps Plasma from adding it back.
-            systemTray =
+            # The raw widget form: plasma-manager's systemTray can't set knownItems
+            # (its `settings` lands beside `config`, not in it).
+            name = "org.kde.plasma.systemtray";
+            config.General =
               let
                 items = [
                   "org.kde.plasma.cameraindicator"
@@ -96,8 +99,8 @@ in
                 ];
               in
               {
-                items.extra = items;
-                settings.config.General.knownItems = items ++ [ "org.kde.plasma.brightness" ];
+                extraItems = items;
+                knownItems = items ++ [ "org.kde.plasma.brightness" ];
               };
           }
           "org.kde.plasma.digitalclock"
