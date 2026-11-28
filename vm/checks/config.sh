@@ -59,6 +59,8 @@ check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0
 check "Panel Colorizer widget"           test -f /usr/share/plasma/plasmoids/luisbocanegra.panel.colorizer/metadata.json
 check "Panel Colorizer scripts executable" test -x /usr/share/plasma/plasmoids/luisbocanegra.panel.colorizer/contents/ui/tools/gdbus_get_signal.sh
 check "Panel Colorizer plugin"           test -f /usr/lib/qt6/qml/org/kde/plasma/panelcolorizer/qmldir
+# Not Nixpkgs' build too: Plasma would load that one (plasma.nix adds it by script).
+check "Panel Colorizer not from Nix"     test ! -e "$HOME/.nix-profile/share/plasma/plasmoids/luisbocanegra.panel.colorizer"
 # user_avatar
 check "avatar icon"                      test -f "/var/lib/AccountsService/icons/$USER"
 check "avatar entry"                     s grep -qx "Icon=/var/lib/AccountsService/icons/$USER" "/var/lib/AccountsService/users/$USER"

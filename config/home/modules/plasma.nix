@@ -179,16 +179,34 @@ in
           }
           # Beside the clock, not in the tray: plasma-manager can't configure a tray
           # item (the tray is a containment of its own). The place is in host.json.
+          # placeInfo is written last, by extraConfig: the widget looks the place up
+          # as soon as placeInfo changes, and plasma-manager writes `config` in
+          # alphabetical order, so provider would still be empty ("Please set your
+          # location" until Plasma restarts).
           {
             name = "org.kde.plasma.weather";
             config = {
               WeatherStation = {
                 provider = "bbcukmet";
-                placeInfo = "${host.weather.place}|${host.weather.bbcId}";
                 placeDisplayName = host.weather.place;
               };
               Appearance.showTemperatureInCompactMode = true;
+              # BBC Weather's units: °C, mph, millibars, miles. Unset, the widget goes
+              # by the locale, and en_GB's imperial measurement system gives °F.
+              # KUnitConversion's ids (kunitconversion/src/unit.h).
+              Units = {
+                temperatureUnit = 6001; # Celsius
+                speedUnit = 9002; # MilePerHour
+                pressureUnit = 5022; # Millibar
+                visibilityUnit = 2024; # Mile
+              };
             };
+            extraConfig = ''
+              (widget) => {
+                widget.currentConfigGroup = ["WeatherStation"];
+                widget.writeConfig("placeInfo", ${builtins.toJSON "${host.weather.place}|${host.weather.bbcId}"});
+              }
+            '';
           }
           {
             # Bank holidays (England and Wales, configFile below), moon phases and
@@ -201,16 +219,20 @@ in
               showWeekNumbers = true;
             };
           }
-          # Styles the panel it sits on; hidden, so it takes no space. The raw form:
-          # plasma-manager's panelColorizer module writes an older version's settings.
-          {
-            name = "luisbocanegra.panel.colorizer";
-            config.General = {
-              hideWidget = true;
-              globalSettings = builtins.toJSON colorizer;
-            };
-          }
         ];
+        # Panel Colorizer: styles the panel it sits on; hidden, so it takes no space.
+        # Added by script, not listed in `widgets`: plasma-manager installs Nixpkgs'
+        # build of any widget it finds there, which Plasma would load instead of the
+        # plasma_widgets role's (decision 3). Its own panelColorizer module writes an
+        # older version's settings anyway.
+        extraSettings = ''
+          {
+            const colorizer = panel.addWidget("luisbocanegra.panel.colorizer");
+            colorizer.currentConfigGroup = ["General"];
+            colorizer.writeConfig("hideWidget", true);
+            colorizer.writeConfig("globalSettings", ${builtins.toJSON (builtins.toJSON colorizer)});
+          }
+        '';
       }
       # Dock: floating, centred, sized to its icons, moves out of the way of windows.
       {
