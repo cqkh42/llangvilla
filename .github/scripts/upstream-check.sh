@@ -3,6 +3,7 @@
 # Dependabot can't watch (.github/dependabot.yml covers the rest)?
 #   - Colloid-kde: new commits on main (it has no releases)
 #   - Colloid icons (for the cursors) and GTK theme: a newer release tag
+#   - Panel Colorizer: a newer release tag
 #   - Ventoy: a newer release, with its tarball's SHA-256 checked against the one
 #     Ventoy publishes
 # It never changes a pin: it reports, with the lines to paste.
@@ -15,11 +16,12 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 theme_defaults=$root/config/ansible/roles/theme/defaults/main.yml
+widgets_defaults=$root/config/ansible/roles/plasma_widgets/defaults/main.yml
 build_usb=$root/installer/build-usb.sh
 issues=0
 [[ ${1:-} == --issues ]] && issues=1
 
-var() { sed -n "s/^$1: *\([^ #]*\).*/\1/p" "$theme_defaults"; }
+var() { sed -n "s/^$1: *\([^ #]*\).*/\1/p" "${2:-$theme_defaults}"; }
 newer_version() { [[ $1 != "$2" && $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1) == "$2" ]]; }
 
 # report TITLE BODY: print it, and with --issues open an issue or update the open one
@@ -68,6 +70,24 @@ for part in icons gtk; do
 - Then run the VM test before merging."
   fi
 done
+
+# ---- Panel Colorizer: the newest release tag (vX.Y.Z)
+repo=$(var plasma_widgets_colorizer_repo "$widgets_defaults") pin=$(var plasma_widgets_colorizer_version "$widgets_defaults")
+tags=$(git ls-remote --tags "$repo")
+latest=$(sed -n 's|.*refs/tags/\(v[0-9][^^]*\)$|\1|p' <<<"$tags" | sort -V | tail -n1)
+if [[ -n $latest ]]; then
+  commit=$(awk -v t="refs/tags/$latest^{}" '$2 == t {print $1}' <<<"$tags")
+  [[ -n $commit ]] || commit=$(awk -v t="refs/tags/$latest" '$2 == t {print $1}' <<<"$tags")
+  if [[ $commit != "$pin" ]]; then
+    report "Upstream: Panel Colorizer has a new release" "A newer release tag than the pinned commit: **$latest**.
+
+- Release: $repo/releases/tag/$latest (changes: $repo/compare/$pin...$commit)
+- To upgrade, set in \`config/ansible/roles/plasma_widgets/defaults/main.yml\`:
+  \`plasma_widgets_colorizer_version: $commit   # tag $latest\`
+- Its settings in \`config/home/modules/plasma.nix\` are merged over its defaults; check the changelog for renamed ones.
+- Then run the VM test before merging."
+  fi
+fi
 
 # ---- Ventoy: the latest release, with its SHA-256 checked
 cur=$(sed -n 's/^VENTOY_VERSION="\([^"]*\)".*/\1/p' "$build_usb")

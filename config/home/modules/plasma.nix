@@ -8,6 +8,98 @@ let
   host = builtins.fromJSON (builtins.readFile ../host.json);
   # Installed by Ansible's login_screen role as a Plasma wallpaper package.
   wallpaper = "/usr/share/wallpapers/${theme.wallpaper.name}/contents/images/${theme.wallpaper.size}.jpg";
+
+  # The tray's items (decision 30). Shown: what's used from the bar, each still only
+  # when relevant (media while something plays). Hidden: behind the arrow. Off: the
+  # rest of Plasma 6.8's defaults, which do nothing on this desktop. Brightness &
+  # Color is off because its light/dark switch has nothing to switch (one Global
+  # Theme for both, decision 29); brightness and Night Light are in System Settings.
+  # Weather is a panel widget of its own, beside the clock.
+  trayItems = {
+    shown = [
+      "org.kde.plasma.notifications"
+      "org.kde.plasma.mediacontroller"
+      "org.kde.plasma.volume"
+      "org.kde.plasma.networkmanagement"
+    ];
+    hidden = [
+      "org.kde.plasma.clipboard"
+      "org.kde.plasma.devicenotifier"
+      "org.kde.plasma.bluetooth"
+      "org.kde.plasma.keyboardlayout"
+      "org.kde.plasma.battery" # wireless mice and keyboards report theirs here
+    ];
+    off = [
+      "org.kde.plasma.brightness"
+      "org.kde.plasma.cameraindicator"
+      "org.kde.plasma.manage-inputmethod"
+      "org.kde.plasma.dwellclicker"
+      "org.kde.plasma.keyboardindicator"
+      "org.kde.kscreen"
+      "org.kde.plasma.weather"
+    ];
+  };
+
+  # Panel Colorizer's settings (its globalSettings, as JSON): only what differs from
+  # its defaults, which it merges in. The bar: Colloid's background made invisible,
+  # and the window colour at 45% over a blur in its place. Every icon and label,
+  # tray ones too: a soft dark shadow; on hover, a rounded tint of the accent colour.
+  # A state that is enabled replaces the normal one, so hover repeats the shadow.
+  colorizer =
+    let
+      shadow.foreground = {
+        enabled = true;
+        size = 4;
+        yOffset = 1;
+        color = {
+          sourceType = 0; # a custom colour
+          custom = "#000000";
+          alpha = 0.6;
+        };
+      };
+      normal = {
+        enabled = true;
+        inherit shadow;
+      };
+      hovered = normal // {
+        backgroundColor = {
+          enabled = true;
+          sourceType = 1; # a colour from the colour scheme
+          systemColor = "highlightColor";
+          systemColorSet = "View";
+          alpha = 0.25;
+        };
+        radius = {
+          enabled = true;
+          corner = {
+            topLeft = 6;
+            topRight = 6;
+            bottomRight = 6;
+            bottomLeft = 6;
+          };
+        };
+      };
+    in
+    {
+      nativePanel.background = {
+        enabled = true;
+        opacity = 0;
+        shadow = false;
+      };
+      panel.normal = {
+        enabled = true;
+        blurBehind = true; # needs its C++ plugin, which the plasma_widgets role builds
+        backgroundColor = {
+          enabled = true;
+          sourceType = 1;
+          systemColor = "backgroundColor";
+          systemColorSet = "Window";
+          alpha = 0.45;
+        };
+      };
+      widgets = { inherit normal hovered; };
+      trayWidgets = { inherit normal hovered; };
+    };
 in
 {
   programs.plasma = {
@@ -60,8 +152,9 @@ in
       };
 
     panels = [
-      # Top bar: launcher on the left; tray and clock on the right. No menus
-      # (apps use their ☰ menus, see apps.nix).
+      # Top bar: launcher on the left; tray, weather and clock on the right. No menus
+      # (apps use their ☰ menus, see apps.nix). Translucent and blurred, with a soft
+      # shadow under the icons, by Panel Colorizer (decision 30).
       {
         location = "top";
         height = 28;
@@ -71,39 +164,52 @@ in
           { kickoff.icon = "/usr/share/pixmaps/archlinux-logo.svg"; }
           "org.kde.plasma.panelspacer"
           {
-            # Plasma 6.8's default tray items, minus Brightness & Color: its light/dark
-            # switch has nothing to switch (one Global Theme for both) and can't be
-            # hidden on its own. Brightness and Night Light stay in System Settings.
-            # Listing it as known but not extra keeps Plasma from adding it back.
             # The raw widget form: plasma-manager's systemTray can't set knownItems
             # (its `settings` lands beside `config`, not in it).
             name = "org.kde.plasma.systemtray";
-            config.General =
-              let
-                items = [
-                  "org.kde.plasma.cameraindicator"
-                  "org.kde.plasma.clipboard"
-                  "org.kde.plasma.devicenotifier"
-                  "org.kde.plasma.manage-inputmethod"
-                  "org.kde.plasma.mediacontroller"
-                  "org.kde.plasma.notifications"
-                  "org.kde.plasma.battery"
-                  "org.kde.plasma.dwellclicker"
-                  "org.kde.plasma.keyboardlayout"
-                  "org.kde.kscreen"
-                  "org.kde.plasma.networkmanagement"
-                  "org.kde.plasma.volume"
-                  "org.kde.plasma.bluetooth"
-                  "org.kde.plasma.keyboardindicator"
-                  "org.kde.plasma.weather"
-                ];
-              in
-              {
-                extraItems = items;
-                knownItems = items ++ [ "org.kde.plasma.brightness" ];
-              };
+            config.General = {
+              extraItems = trayItems.shown ++ trayItems.hidden;
+              # Behind the tray's arrow; they still pop out when they need attention
+              # (a USB stick plugged in).
+              hiddenItems = trayItems.hidden;
+              # Every item Plasma 6.8 knows of: an item that is known but not extra
+              # stays off, instead of Plasma adding it back.
+              knownItems = trayItems.shown ++ trayItems.hidden ++ trayItems.off;
+            };
           }
-          "org.kde.plasma.digitalclock"
+          # Beside the clock, not in the tray: plasma-manager can't configure a tray
+          # item (the tray is a containment of its own). The place is in host.json.
+          {
+            name = "org.kde.plasma.weather";
+            config = {
+              WeatherStation = {
+                provider = "bbcukmet";
+                placeInfo = "${host.weather.place}|${host.weather.bbcId}";
+                placeDisplayName = host.weather.place;
+              };
+              Appearance.showTemperatureInCompactMode = true;
+            };
+          }
+          {
+            # Bank holidays (England and Wales, configFile below), moon phases and
+            # seasons in the calendar, with week numbers.
+            digitalClock.calendar = {
+              plugins = [
+                "holidaysevents"
+                "astronomicalevents"
+              ];
+              showWeekNumbers = true;
+            };
+          }
+          # Styles the panel it sits on; hidden, so it takes no space. The raw form:
+          # plasma-manager's panelColorizer module writes an older version's settings.
+          {
+            name = "luisbocanegra.panel.colorizer";
+            config.General = {
+              hideWidget = true;
+              globalSettings = builtins.toJSON colorizer;
+            };
+          }
         ];
       }
       # Dock: floating, centred, sized to its icons, moves out of the way of windows.
@@ -134,6 +240,19 @@ in
 
     # Spotlight-style search on Meta+Space (Meta alone still opens the launcher).
     krunner.shortcuts.launch = "Meta+Space";
+
+    # The Mac genie when minimising, and blur behind translucent windows and panels
+    # (on by default; set so the repo says so).
+    kwin.effects = {
+      minimization.animation = "magiclamp";
+      blur.enable = true;
+    };
+
+    # Clipboard history: 100 entries, not 20.
+    configFile.klipperrc.General.MaxClipItems = 100;
+
+    # The clock calendar's bank holidays: England and Wales (KHolidays' region code).
+    configFile.plasma_calendar_holiday_regions.General.selectedRegions = "gb-eaw_en-gb";
 
     kscreenlocker.appearance.wallpaper = wallpaper;
 

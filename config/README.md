@@ -73,7 +73,7 @@ config/
 │   ├── flake.nix, flake.lock      inputs (nixpkgs, home-manager, plasma-manager), pinned by the lock
 │   ├── home.nix                   settings every user gets
 │   ├── theme.json                 the look: theme names, fonts, wallpaper (read by Nix and Ansible)
-│   ├── host.json                  the machine: login user, keyboard layout, mirror countries (likewise)
+│   ├── host.json                  the machine: login user, keyboard layout, mirror countries, weather place (likewise)
 │   └── modules/                   plasma.nix (the Mac layout), gtk.nix, apps.nix (☰ menus), git.nix, shell.nix, notices.nix
 └── ansible/
     ├── ansible.cfg                inventory = inventory.ini
@@ -86,6 +86,7 @@ config/
         ├── boot/                  kernel command line of every boot entry (zswap off)
         ├── firewall/              ufw: incoming blocked, outgoing allowed, SSH rate-limited
         ├── theme/                 Colloid dark, system-wide, pinned to exact commits
+        ├── plasma_widgets/        third-party Plasma widgets built from source (Panel Colorizer)
         ├── login_screen/          Plasma Login Manager: wallpaper, colours, icons, cursor, font
         ├── user_avatar/           user avatar, through AccountsService
         ├── nix/                   Nix from pacman, daemon socket, flakes
@@ -97,13 +98,14 @@ config/
 
 | Variable | Defined in | Default | Description |
 |---|---|---|---|
-| `host` | `site.yml`, from `config/home/host.json` | `jack`, `gb`, `[GB]` | The machine's facts, shared with the user layer: login user, keyboard layout, mirror countries. Change them there |
+| `host` | `site.yml`, from `config/home/host.json` | `jack`, `gb`, `[GB]`, Tur Langton | The machine's facts, shared with the user layer: login user, keyboard layout, mirror countries, and the top bar's weather place (as BBC Weather names it, with its BBC location id: the number in a bbc.co.uk/weather/… link). Change them there |
 | `user_name` | `site.yml`, `host.user` | `jack` | Login user. Must match `USER_NAME` from the installer; the playbook fails if the user doesn't exist. The flake's `homeConfigurations` entry is named from the same file |
 | `firewall_ssh_port` | `roles/firewall/defaults/main.yml` | `22` | SSH's port, allowed through the firewall with a rate limit (6 new connections in 30 s per address) |
 | `packages_install` | `roles/packages/defaults/main.yml` | kate, ark, firefox and its Plasma integration, spectacle, the system monitor, vim, htop, btop, man pages, media codecs, base-devel, Inter, JetBrains Mono Nerd Font | Installed with pacman |
 | `packages_remove` | `roles/packages/defaults/main.yml` | `[]` | Removed with pacman, with the dependencies only they needed ([Removing things](#removing-things)) |
 | `mirrors_countries`, `mirrors_latest` | `roles/mirrors/defaults/main.yml` | `host.mirrorCountries`, `10` | reflector's mirror choice: the 10 most recently synced HTTPS mirrors in those countries, sorted by speed, written to `/etc/pacman.d/mirrorlist` weekly |
 | `theme_colloid_*_version` | `roles/theme/defaults/main.yml` | pinned commits | The Colloid KDE, icon and GTK themes. Change a commit to upgrade that theme ([Themes](#themes)) |
+| `plasma_widgets_colorizer_version` | `roles/plasma_widgets/defaults/main.yml` | v8.2.0's commit | Panel Colorizer, built from source ([Themes](#themes)) |
 | `look` | `site.yml`, from `config/home/theme.json` | Colloid dark, 24 px cursor, Inter 10, Seafront | The look, shared by the login screen (Ansible) and the desktop and GTK (`config/home`). Change it there, not in a role |
 | `login_screen_color_scheme`, `_icon_theme`, `_cursor_theme`, `_cursor_size`, `_font` | `roles/login_screen/defaults/main.yml` | from `look` | The login screen's look |
 | `user_avatar_src` | `roles/user_avatar/defaults/main.yml` | `assets/avatar.png` | The login user's picture, on the login screen and in Plasma |
@@ -164,7 +166,9 @@ Each theme is pinned to a commit in `roles/theme/defaults/main.yml`. The role ch
 
 Colloid's own Global Theme (look-and-feel package) is not installed: its defaults name Kvantum as the widget style, and Kvantum is not used. The role writes a Global Theme of its own instead, from `theme.json` (`roles/theme/templates/look-and-feel-defaults.j2`). `plasma.nix` still selects each part individually, and makes this Global Theme the current one and Plasma's default for both light and dark, so the tray's light/dark switch stays on Colloid. It has no layout, so applying it in System Settings leaves the panels alone.
 
-The Plasma style isn't copied as-is: `roles/theme/files/install-plasma-style.py` removes stale colour stylesheets from Colloid's SVGs, which otherwise keep the panel, dock and tray light whatever the colour scheme. It runs once per pinned commit, like the icon and GTK installers.
+The Plasma style isn't copied as-is: `roles/theme/files/install-plasma-style.py` removes stale colour stylesheets from Colloid's SVGs, which otherwise keep the panel, dock and tray light whatever the colour scheme. It also leaves out Colloid's style icons (thin line icons that would win over the icon theme), so the tray draws Papirus's. It runs once per pinned commit, like the icon and GTK installers.
+
+The top bar's translucent, blurred look is [Panel Colorizer](https://github.com/luisbocanegra/plasma-panel-colorizer), a widget with a C++ plugin. The `plasma_widgets` role builds both from its pinned release into `/usr`, like Arch's AUR package, and builds again whenever `qt6-base`, `qt6-declarative`, `libplasma` or `layer-shell-qt` change version (their versions are in its stamp): upstream warns a stale plugin can crash Plasma after an upgrade, and `apply.sh` upgrades first. Its settings are in `plasma.nix` (`colorizer`); the widget is hidden on the bar, so change them there, not in the widget's own settings window, which the next apply resets. If Plasma crashes at login after an upgrade, `sudo rm -rf /usr/lib/qt6/qml/org/kde/plasma/panelcolorizer` brings it back without the blur, and the next apply rebuilds it.
 
 ## Snapshots
 

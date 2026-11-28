@@ -1,0 +1,70 @@
+---
+# Panel Colorizer: the top bar's translucent, blurred background and the soft shadow
+# under its icons (plasma.nix sets it up). It is a QML widget plus a C++ QML plugin
+# (blur needs the plugin), built here against Arch's Qt: anything Plasma or Qt loads
+# comes from pacman or is built against it, never from Nix (decision 3).
+- name: Install what Panel Colorizer needs to build and run
+  community.general.pacman:
+    name:
+      - cmake
+      - extra-cmake-modules
+      - python-dbus   # its D-Bus service (contents/ui/tools/service.py)
+    state: present
+
+- name: Create the source and stamp directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ plasma_widgets_src_dir }}"
+    - "{{ plasma_widgets_stamp_dir }}"
+
+- name: Check out Panel Colorizer at its pinned commit
+  ansible.builtin.git:
+    repo: "{{ plasma_widgets_colorizer_repo }}"
+    dest: "{{ plasma_widgets_src_dir }}/panel-colorizer"
+    version: "{{ plasma_widgets_colorizer_version }}"
+    refspec: "{{ plasma_widgets_colorizer_version }}"   # with depth, lets git fetch a bare commit
+    depth: 1
+    force: true
+
+# The plugin is built against the installed Qt, Plasma and LayerShellQt, and upstream
+# warns a stale build can crash Plasma after an upgrade. apply.sh upgrades first, so
+# the stamp carries those packages' versions and the plugin is rebuilt in the same
+# run as any upgrade of them.
+- name: Look up the Qt, Plasma and LayerShellQt versions the plugin builds against
+  ansible.builtin.command: pacman -Q qt6-base qt6-declarative libplasma layer-shell-qt
+  register: plasma_widgets_build_deps
+  changed_when: false
+
+- name: Note Panel Colorizer's build stamp
+  ansible.builtin.set_fact:
+    plasma_widgets_colorizer_stamp: >-
+      {{ plasma_widgets_stamp_dir }}/panel-colorizer-{{ plasma_widgets_colorizer_version }}-{{
+      (plasma_widgets_build_deps.stdout | hash('sha1'))[:12] }}
+
+# As Arch's AUR package builds it (widget and plugin in one build), with /usr as the
+# prefix; its translations are left out (English only). It is installed into a
+# staging directory and copied with --remove-destination: a running Plasma keeps the
+# plugin it loaded instead of having the file rewritten under it. Files a newer
+# version drops linger, which is harmless for a widget.
+- name: Build and install Panel Colorizer (widget and plugin)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      rm -rf build
+      cmake -B build -S . -DINSTALL_PLASMOID=ON -DBUILD_PLUGIN=ON \
+        -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release
+      cmake --build build
+      DESTDIR="$PWD/build/root" cmake --install build
+      # plasma_install_package doesn't keep the scripts' executable bit
+      chmod 0755 build/root/usr/share/plasma/plasmoids/luisbocanegra.panel.colorizer/contents/ui/tools/*.sh
+      cp -a --remove-destination build/root/usr/. /usr/
+      rm -rf build
+      touch "{{ plasma_widgets_colorizer_stamp }}"
+    chdir: "{{ plasma_widgets_src_dir }}/panel-colorizer"
+    executable: /bin/bash
+    creates: "{{ plasma_widgets_colorizer_stamp }}"

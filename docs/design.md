@@ -20,7 +20,7 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Arch launcher                                  tray   clock  │  top bar, 28 px
+│ Arch launcher                     tray  weather  clock       │  top bar, 28 px, translucent
 │                                                              │
 │   ● ● ●  window title         (buttons on the left)          │
 │                                                              │
@@ -42,10 +42,14 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 | Icons | Papirus-Dark (flat, made for dark backgrounds; Colloid's app icons sit on white tiles) | `theme` | `plasma.nix`, `gtk.nix`; the login screen by `login_screen` |
 | Cursor | Colloid dark, 24 px, one theme everywhere | `theme` | `plasma.nix`, `gtk.nix`; the login screen by `login_screen` |
 | Fonts | Inter (interface), JetBrains Mono Nerd Font (monospace) | `packages` | `plasma.nix`, `gtk.nix` |
+| Top bar | Translucent over a blur, soft shadows under its icons, an accent tint on hover: Panel Colorizer | `plasma_widgets` | `plasma.nix` |
+| Tray icons | Papirus's, not the Plasma style's (Colloid's thin line icons are left out) | `theme` | `theme` (`install-plasma-style.py`) |
 | Wallpaper | A lofi seafront at dusk (pier, moored boats, a cat), drawn as an SVG (`config/assets/seafront.svg`) and rendered at 3840×2160 | `login_screen` | `plasma.nix`: desktop and lock screen; `login_screen`: login screen |
 
 - **Window buttons** on the left. Colloid's decorations already draw them as red, yellow and green circles, so no recolouring.
 - **KRunner** on Meta+Space acts as a Spotlight-style launcher.
+- **Top bar**: the tray shows notifications, media, volume and network; clipboard, devices, Bluetooth, keyboard layout and peripheral batteries are behind its arrow. Beside it, the weather for the place in `host.json` (BBC Weather) with the temperature, then the clock, whose calendar shows English bank holidays, moon phases, seasons and week numbers.
+- **Effects**: the magic lamp (genie) when minimising; blur behind translucent windows and panels.
 - **Login screen**: Plasma Login Manager, one user, no autologin: it opens on that user with the password field ready.
 - **Login splash**: none; Plasma goes straight from the password to the desktop (`plasma.nix`).
 - **Boot**: systemd-boot, no boot theme for now.

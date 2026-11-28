@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Install Colloid's Plasma style without its stale colour stylesheets.
 
-Usage: install-plasma-style.py STYLE_SRC ICONS_SRC DEST STAMP
+Usage: install-plasma-style.py STYLE_SRC DEST STAMP
 
-Replaces DEST with a copy of STYLE_SRC (plus ICONS_SRC as DEST/icons), then strips
-the extra stylesheets from every SVG and writes STAMP.
+Replaces DEST with a copy of STYLE_SRC, then strips the extra stylesheets from every
+SVG and writes STAMP. Colloid's style icons (plasma/desktoptheme/icons: the tray's
+volume, network, clipboard and so on) are left out, so the tray uses the icon
+theme's (Papirus) instead: a style's own icons win over the icon theme.
 
 Why: Plasma recolours a style's SVGs by replacing the contents of the one
 <style id="current-color-scheme"> element with the colour scheme's colours (KSvg).
@@ -52,10 +54,9 @@ def strip(path: pathlib.Path) -> bool:
 
 
 def main() -> None:
-    style_src, icons_src, dest, stamp = map(pathlib.Path, sys.argv[1:5])
+    style_src, dest, stamp = map(pathlib.Path, sys.argv[1:4])
     shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(style_src, dest)
-    shutil.copytree(icons_src, dest / "icons", dirs_exist_ok=True)
     fixed = sum(strip(p) for p in sorted(dest.rglob("*.svg*")) if p.suffix in (".svg", ".svgz"))
     stamp.touch()
     print(f"Installed {dest}; removed stale colour stylesheets from {fixed} SVGs")

@@ -36,6 +36,8 @@
       tags: [firewall]
     - role: theme
       tags: [theme]
+    - role: plasma_widgets
+      tags: [plasma_widgets]
     - role: login_screen
       tags: [login_screen]
     - role: user_avatar
