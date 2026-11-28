@@ -66,9 +66,40 @@ in
         location = "top";
         height = 28;
         widgets = [
-          "org.kde.plasma.kickoff"
+          # The Arch logo (from the filesystem package), not Colloid's Apple one:
+          # its Plasma style draws start-here-kde as an Apple.
+          { kickoff.icon = "/usr/share/pixmaps/archlinux-logo.svg"; }
           "org.kde.plasma.panelspacer"
-          "org.kde.plasma.systemtray"
+          {
+            # Plasma 6.8's default tray items, minus Brightness & Color: its light/dark
+            # switch has nothing to switch (one Global Theme for both) and can't be
+            # hidden on its own. Brightness and Night Light stay in System Settings.
+            # Listing it as known but not extra keeps Plasma from adding it back.
+            systemTray =
+              let
+                items = [
+                  "org.kde.plasma.cameraindicator"
+                  "org.kde.plasma.clipboard"
+                  "org.kde.plasma.devicenotifier"
+                  "org.kde.plasma.manage-inputmethod"
+                  "org.kde.plasma.mediacontroller"
+                  "org.kde.plasma.notifications"
+                  "org.kde.plasma.battery"
+                  "org.kde.plasma.dwellclicker"
+                  "org.kde.plasma.keyboardlayout"
+                  "org.kde.kscreen"
+                  "org.kde.plasma.networkmanagement"
+                  "org.kde.plasma.volume"
+                  "org.kde.plasma.bluetooth"
+                  "org.kde.plasma.keyboardindicator"
+                  "org.kde.plasma.weather"
+                ];
+              in
+              {
+                items.extra = items;
+                settings.config.General.knownItems = items ++ [ "org.kde.plasma.brightness" ];
+              };
+          }
           "org.kde.plasma.digitalclock"
         ];
       }

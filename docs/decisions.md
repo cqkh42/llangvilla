@@ -170,3 +170,9 @@ Entries 1–19 come from the holistic review of November 2026; 20–26 from its 
 
 **Why:** with no Global Theme set, Plasma assumed Breeze, so its light/dark switch in the tray went to Breeze Dark and dropped Colloid. Colloid's own Global Theme sets Kvantum widgets. The panel, dock and tray icons were light under ColloidDark because many of Colloid's SVGs carry extra copies of the colour stylesheet with Breeze Light's colours: Plasma replaces only the first, and the later copies win. That bug is in the Plasma style itself, so Kvantum would not have fixed it.
 
+
+## 29. Papirus icons; no Brightness & Color in the tray; the Arch logo on the launcher
+
+**Decision:** the icons are Papirus-Dark (Arch's `papirus-icon-theme`, installed by the `theme` role); the Colloid icon themes are removed, and the Colloid icon repo is kept for the cursors. `plasma.nix` lists the tray's items without `org.kde.plasma.brightness`, and sets the launcher's icon to `/usr/share/pixmaps/archlinux-logo.svg` (from `filesystem`).
+
+**Why:** Colloid's app icons (Files, Firefox, Settings) are pictures on white tiles, and its Dark set reuses the light ones, so the dock stayed light under a dark theme; they are embedded PNGs, so they can't be recoloured. Brightness & Color carries Plasma's light/dark switch, which has nothing to switch between with one Global Theme for both, and Plasma 6.8 has no setting to hide just that row; brightness and Night Light stay in System Settings. Colloid's Plasma style draws the launcher's `start-here-kde` icon as an Apple logo.
