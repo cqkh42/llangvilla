@@ -8,7 +8,8 @@
     name:
       - cmake
       - extra-cmake-modules
-      - python-dbus   # its D-Bus service (contents/ui/tools/service.py)
+      - python-dbus      # its D-Bus service (contents/ui/tools/service.py)
+      - python-gobject   # likewise (GLib's main loop)
     state: present
 
 - name: Create the source and stamp directories
