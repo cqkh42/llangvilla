@@ -740,9 +740,25 @@ SH
     || die "The launcher's icon is not the Arch logo after login ($appletsrc)."
   # shellcheck disable=SC2016  # expands in the VM
   ssh "${S[@]}" "$vm_user@127.0.0.1" \
-    'grep "^extraItems=" '"$appletsrc"' | grep -q . && ! grep "^extraItems=" '"$appletsrc"' | grep -q org.kde.plasma.brightness' \
-    || die "Brightness & Color is still a tray item after login ($appletsrc, extraItems)."
-  ok "Launcher shows the Arch logo; Brightness & Color is not in the tray"
+    'grep "^extraItems=" '"$appletsrc"' | grep -q org.kde.plasma.volume && ! grep "^extraItems=" '"$appletsrc"' | grep -q -e org.kde.plasma.brightness -e org.kde.plasma.dwellclicker' \
+    || die "The tray's items are not plasma.nix's after login ($appletsrc, extraItems: Brightness & Color or Dwell Clicker still in, or Volume missing)."
+  ok "Launcher shows the Arch logo; the tray has plasma.nix's items, without Brightness & Color"
+
+  # The weather beside the clock (Tur Langton, from host.json), and Panel Colorizer
+  # on the top bar. Its C++ plugin is built against the VM's Qt: if Plasma can't load
+  # it, or it crashed Plasma (upstream's warning), it shows here.
+  weather=$(python3 -c 'import json,sys; w=json.load(open(sys.argv[1]))["weather"]; print(w["place"] + "|" + w["bbcId"])' "$repo/config/home/host.json")
+  # Quoted for the VM's shell, which ssh hands one string: the place has spaces and a |.
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qxF $(printf %q "placeInfo=$weather") $appletsrc" \
+    || die "The weather widget's place is not $weather after login ($appletsrc)."
+  ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qx "plugin=luisbocanegra.panel.colorizer" "$appletsrc" \
+    || die "Panel Colorizer is not on a panel after login ($appletsrc)."
+  ssh "${S[@]}" "$vm_user@127.0.0.1" pgrep -u "$vm_user" -x plasmashell >/dev/null \
+    || die "Plasma is no longer running after login (crashed? Panel Colorizer's plugin is the newest suspect)."
+  out=$(ssh "${S[@]}" "$vm_user@127.0.0.1" journalctl --user -b --no-pager -o cat 2>&1 | grep -i 'panelcolorizer' | grep -i -e 'not installed' -e 'cannot load' -e 'error' || true)
+  [[ -z $out ]] || { printf '%s\n' "$out" >&2; die "Plasma could not load Panel Colorizer's plugin (journal above): no blur on the top bar."; }
+  ok "Weather for ${weather%%|*} beside the clock; Panel Colorizer and its plugin loaded, Plasma still running"
 
   # notices.nix logs each notice its notification service accepted.
   out=$(vm_sudo journalctl -b -t llangvilla-notices --no-pager -o cat 2>&1 || true)

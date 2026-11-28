@@ -98,17 +98,18 @@
 
 # The Plasma style is copied by a script that also removes stale colour stylesheets
 # from its SVGs (the script says why): without that, the panel, dock and tray stay
-# light under a dark scheme. It replaces the whole directory, once per pinned commit.
-- name: Install the Colloid Plasma style, without its stale colour stylesheets
+# light under a dark scheme. Colloid's style icons are left out, so the tray uses
+# Papirus's (decision 30). It replaces the whole directory, once per pinned commit
+# (the stamp's "no-icons" made it run again when the icons were dropped).
+- name: Install the Colloid Plasma style, without its stale colour stylesheets or icons
   ansible.builtin.script:
     cmd: >-
       install-plasma-style.py
       {{ theme_src_dir }}/colloid-kde/plasma/desktoptheme/Colloid-dark
-      {{ theme_src_dir }}/colloid-kde/plasma/desktoptheme/icons
       /usr/share/plasma/desktoptheme/Colloid-dark
-      {{ theme_stamp_dir }}/colloid-plasma-style-{{ theme_colloid_kde_version }}
+      {{ theme_stamp_dir }}/colloid-plasma-style-no-icons-{{ theme_colloid_kde_version }}
     executable: python3
-    creates: "{{ theme_stamp_dir }}/colloid-plasma-style-{{ theme_colloid_kde_version }}"
+    creates: "{{ theme_stamp_dir }}/colloid-plasma-style-no-icons-{{ theme_colloid_kde_version }}"
 
 - name: Install the Colloid cursors (light and dark)
   ansible.builtin.copy:

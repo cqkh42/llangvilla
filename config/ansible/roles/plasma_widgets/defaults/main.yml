@@ -1,0 +1,11 @@
+---
+# Third-party Plasma widgets, built from source and installed system-wide (decision 30).
+# Each is pinned to a release's commit: change it to upgrade, and the role rebuilds.
+# The weekly upstream check opens an issue when there is a newer release.
+plasma_widgets_colorizer_repo: https://github.com/luisbocanegra/plasma-panel-colorizer
+plasma_widgets_colorizer_version: b16e9784a93282e9a6bf6377c677710a2ac2e49d   # tag v8.2.0
+
+# Where the sources are checked out, and the stamps that mark an installed build
+# (shared with the theme role).
+plasma_widgets_src_dir: /var/lib/llangvilla/src
+plasma_widgets_stamp_dir: /var/lib/llangvilla/stamps

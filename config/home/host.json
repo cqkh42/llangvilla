@@ -1,5 +1,6 @@
 {
   "user": "jack",
   "keyboardLayout": "gb",
-  "mirrorCountries": ["GB"]
+  "mirrorCountries": ["GB"],
+  "weather": { "place": "Tur Langton, Leicestershire, GB", "bbcId": "2635345" }
 }

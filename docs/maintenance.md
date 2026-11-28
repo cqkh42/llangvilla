@@ -23,6 +23,7 @@ Notices are notifications at desktop login, and the login message over SSH and o
 | The linters (`.github/lint/requirements.txt`) | Dependabot, weekly | Automatically, once lint passes |
 | nixpkgs, home-manager, plasma-manager (`config/home/flake.lock`) | Dependabot, weekly; the VM test runs on the PR | **By you**, once the VM test is green |
 | Colloid themes (`config/ansible/roles/theme/defaults/main.yml`) | The upstream check opens an issue with the new commit, weekly | **By hand**: paste the commit, run the VM test, open a PR |
+| Panel Colorizer (`config/ansible/roles/plasma_widgets/defaults/main.yml`) | The upstream check opens an issue with the new release's commit, weekly | **By hand**: paste the commit, check its changelog against `plasma.nix`'s settings, run the VM test, open a PR |
 | Ventoy (`installer/build-usb.sh`) | The upstream check opens an issue with the new version and its checked SHA-256, weekly | **By hand**: paste both, open a PR. A stick that already has Ventoy keeps its old version ([#46](https://github.com/cqkh42/llangvilla/issues/46)) |
 | Arch packages, the ISO's `archlinux` image | Not pinned (rolling) | The weekly VM test catches breakage; snapshots are the undo |
 

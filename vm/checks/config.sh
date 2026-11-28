@@ -46,13 +46,21 @@ stale_styles() {
     n=$(zcat -f "$f" | grep -c '\.ColorScheme-Background *{')
     (( n > 1 )) && { echo "$f"; bad=1; }
   done < <(find "/usr/share/plasma/desktoptheme/$PLASMA" -name '*.svg*' -print0)
-  return $bad
+  return "$bad"
 }
 check "Plasma style: one colour stylesheet per SVG" stale_styles
+# Colloid's style icons are left out, so the tray draws Papirus's (decision 30).
+check "Plasma style: no icons of its own (tray uses $ICONS)" test ! -e "/usr/share/plasma/desktoptheme/$PLASMA/icons"
 check "Global Theme $LNF"                test -f "/usr/share/plasma/look-and-feel/$LNF/metadata.json" -a -f "/usr/share/plasma/look-and-feel/$LNF/contents/defaults"
 check "icons $ICONS"                     test -f "/usr/share/icons/$ICONS/index.theme"
 check "cursors $CURSOR"                  test -d "/usr/share/icons/$CURSOR/cursors"
 check "GTK theme $GTK"                   test -d "/usr/share/themes/$GTK/gtk-3.0"
+# plasma_widgets: Panel Colorizer's widget, and its C++ plugin (the top bar's blur)
+check "Panel Colorizer widget"           test -f /usr/share/plasma/plasmoids/luisbocanegra.panel.colorizer/metadata.json
+check "Panel Colorizer scripts executable" test -x /usr/share/plasma/plasmoids/luisbocanegra.panel.colorizer/contents/ui/tools/gdbus_get_signal.sh
+check "Panel Colorizer plugin"           test -f /usr/lib/qt6/qml/org/kde/plasma/panelcolorizer/qmldir
+# Not Nixpkgs' build too: Plasma would load that one (plasma.nix adds it by script).
+check "Panel Colorizer not from Nix"     test ! -e "$HOME/.nix-profile/share/plasma/plasmoids/luisbocanegra.panel.colorizer"
 # user_avatar
 check "avatar icon"                      test -f "/var/lib/AccountsService/icons/$USER"
 check "avatar entry"                     s grep -qx "Icon=/var/lib/AccountsService/icons/$USER" "/var/lib/AccountsService/users/$USER"
@@ -77,6 +85,9 @@ for app in dolphinrc katerc arkrc; do
 done
 check "menu bar off (konsolerc)"         grep -qix 'ShowMenuBarByDefault=false' "$HOME/.config/konsolerc"
 check "no login splash (ksplashrc)"     grep -qx 'Engine=none' "$HOME/.config/ksplashrc"
+check "magic lamp minimising (kwinrc)"   grep -qx 'magiclampEnabled=true' "$HOME/.config/kwinrc"
+check "clipboard history 100 (klipperrc)" grep -qx 'MaxClipItems=100' "$HOME/.config/klipperrc"
+check "bank holidays (England and Wales)" grep -qx 'selectedRegions=gb-eaw_en-gb' "$HOME/.config/plasma_calendar_holiday_regions"
 check "GTK 3 theme $GTK"                 grep -qx "gtk-theme-name=$GTK" "$HOME/.config/gtk-3.0/settings.ini"
 check "GTK 4 settings"                   test -e "$HOME/.config/gtk-4.0/settings.ini"
 check "GTK 2 settings"                   test -e "$HOME/.gtkrc-2.0"
