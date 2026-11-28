@@ -748,7 +748,9 @@ SH
   # on the top bar. Its C++ plugin is built against the VM's Qt: if Plasma can't load
   # it, or it crashed Plasma (upstream's warning), it shows here.
   weather=$(python3 -c 'import json,sys; w=json.load(open(sys.argv[1]))["weather"]; print(w["place"] + "|" + w["bbcId"])' "$repo/config/home/host.json")
-  ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qxF "placeInfo=$weather" "$appletsrc" \
+  # Quoted for the VM's shell, which ssh hands one string: the place has spaces and a |.
+  # shellcheck disable=SC2029  # expanding on the client side is the point
+  ssh "${S[@]}" "$vm_user@127.0.0.1" "grep -qxF $(printf %q "placeInfo=$weather") $appletsrc" \
     || die "The weather widget's place is not $weather after login ($appletsrc)."
   ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qx "plugin=luisbocanegra.panel.colorizer" "$appletsrc" \
     || die "Panel Colorizer is not on a panel after login ($appletsrc)."
