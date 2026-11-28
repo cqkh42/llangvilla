@@ -131,7 +131,7 @@ nix run path:config/home#home-manager -- switch -b backup --flake path:config/ho
 
 | Module | Sets |
 |---|---|
-| `plasma.nix` | Colloid dark (style, colours, icons, cursor, decorations), Breeze widgets, buttons on the left, Inter / JetBrains Mono, top bar (launcher, tray, clock), floating dock that moves out of the way, KRunner on Meta+Space, wallpaper on desktop and lock screen |
+| `plasma.nix` | Colloid dark (style, colours, icons, cursor, decorations), Breeze widgets, buttons on the left, Inter / JetBrains Mono, top bar (Arch-logo launcher, tray without Brightness & Color, clock), floating dock that moves out of the way, KRunner on Meta+Space, wallpaper on desktop and lock screen |
 | `gtk.nix` | GTK 3/4 theme, icons, cursor and font to match |
 | `apps.nix` | Menu bars off in Dolphin, Kate, Ark and Konsole (☰ menus; Ctrl+M brings one back) |
 | `git.nix`, `shell.nix` | Git behaviour (no identity yet) and bash |
@@ -148,12 +148,13 @@ To add something, add a module under `modules/`, import it from `home.nix`, then
 
 ## Themes
 
-The `theme` role installs Colloid dark into `/usr/share`, so the login screen, which runs as a system user, can use it as well. Choosing it for your own session is the user layer's job (`config/home/modules/plasma.nix` and `gtk.nix`).
+The `theme` role installs Colloid dark and the Papirus icons into `/usr/share`, so the login screen, which runs as a system user, can use it as well. Choosing it for your own session is the user layer's job (`config/home/modules/plasma.nix` and `gtk.nix`).
 
 | Part | From | Installed as |
 |---|---|---|
 | Plasma style, window decorations, colour scheme | [Colloid-kde](https://github.com/vinceliuice/Colloid-kde) | `Colloid-dark`, `ColloidDark` |
-| Icons and cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid`, `Colloid-Light`, `Colloid-Dark`; `Colloid-cursors`, `Colloid-dark-cursors` |
+| Icons | [Papirus](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme) (Arch's `papirus-icon-theme`) | `Papirus-Dark` (and `Papirus`, `Papirus-Light`) |
+| Cursors | [Colloid-icon-theme](https://github.com/vinceliuice/Colloid-icon-theme) | `Colloid-cursors`, `Colloid-dark-cursors` |
 | GTK 3/4 theme | [Colloid-gtk-theme](https://github.com/vinceliuice/Colloid-gtk-theme) | `Colloid-Dark` (built with `sassc`) |
 | Global Theme | Ours: the parts above with Breeze widgets, Colloid's previews | `org.llangvilla.colloid-dark` ("Colloid Dark") |
 

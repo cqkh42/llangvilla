@@ -733,6 +733,17 @@ SH
   done
   ok "Panels and wallpaper applied at login (plasma-manager's desktop scripts)"
 
+  # The top bar's details (plasma.nix): the Arch logo on the launcher, and no
+  # Brightness & Color in the tray (Plasma adds it back unless it is a known item).
+  appletsrc=.config/plasma-org.kde.plasma.desktop-appletsrc
+  ssh "${S[@]}" "$vm_user@127.0.0.1" grep -qx "icon=/usr/share/pixmaps/archlinux-logo.svg" "$appletsrc" \
+    || die "The launcher's icon is not the Arch logo after login ($appletsrc)."
+  # shellcheck disable=SC2016  # expands in the VM
+  ssh "${S[@]}" "$vm_user@127.0.0.1" \
+    'grep "^extraItems=" '"$appletsrc"' | grep -q . && ! grep "^extraItems=" '"$appletsrc"' | grep -q org.kde.plasma.brightness' \
+    || die "Brightness & Color is still a tray item after login ($appletsrc, extraItems)."
+  ok "Launcher shows the Arch logo; Brightness & Color is not in the tray"
+
   # notices.nix logs each notice its notification service accepted.
   out=$(vm_sudo journalctl -b -t llangvilla-notices --no-pager -o cat 2>&1 || true)
   grep -qx 'shown llangvilla-vmtest' <<<"$out" \

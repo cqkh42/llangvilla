@@ -1,7 +1,7 @@
 ---
 # The look of the login screen (Plasma Login Manager). It has no themes of its own:
 # it uses a colour scheme, icons, cursor and font from its system user's Plasma
-# settings, and a wallpaper from its config. The theme role installs the Colloid parts.
+# settings, and a wallpaper from its config. The theme role installs them.
 # The names come from config/home/theme.json (`look`, set in site.yml), which the
 # desktop's settings (config/home) read too, so the two always match.
 login_screen_color_scheme: "{{ look.colorScheme }}"

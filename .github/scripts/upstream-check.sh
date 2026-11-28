@@ -2,7 +2,7 @@
 # Is there anything newer upstream than what this repo pins, for the dependencies
 # Dependabot can't watch (.github/dependabot.yml covers the rest)?
 #   - Colloid-kde: new commits on main (it has no releases)
-#   - Colloid icons and GTK theme: a newer release tag
+#   - Colloid icons (for the cursors) and GTK theme: a newer release tag
 #   - Ventoy: a newer release, with its tarball's SHA-256 checked against the one
 #     Ventoy publishes
 # It never changes a pin: it reports, with the lines to paste.

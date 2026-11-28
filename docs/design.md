@@ -20,7 +20,7 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ ⌘ launcher                                     tray   clock  │  top bar, 28 px
+│ Arch launcher                                  tray   clock  │  top bar, 28 px
 │                                                              │
 │   ● ● ●  window title         (buttons on the left)          │
 │                                                              │
@@ -39,7 +39,7 @@ The Mac feel comes mostly from the layout, which plasma-manager sets in `config/
 | Colour scheme | Colloid's own dark scheme, blue accent | `theme` | `plasma.nix`; the login screen by `login_screen` |
 | Qt widgets | Breeze, coloured by the scheme (not Kvantum) | the base | `plasma.nix` |
 | GTK 3 and 4 | Colloid-gtk, dark | `theme` | `gtk.nix` |
-| Icons | Colloid icons | `theme` | `plasma.nix`, `gtk.nix` |
+| Icons | Papirus-Dark (flat, made for dark backgrounds; Colloid's app icons sit on white tiles) | `theme` | `plasma.nix`, `gtk.nix`; the login screen by `login_screen` |
 | Cursor | Colloid dark, 24 px, one theme everywhere | `theme` | `plasma.nix`, `gtk.nix`; the login screen by `login_screen` |
 | Fonts | Inter (interface), JetBrains Mono Nerd Font (monospace) | `packages` | `plasma.nix`, `gtk.nix` |
 | Wallpaper | A lofi seafront at dusk (pier, moored boats, a cat), drawn as an SVG (`config/assets/seafront.svg`) and rendered at 3840×2160 | `login_screen` | `plasma.nix`: desktop and lock screen; `login_screen`: login screen |

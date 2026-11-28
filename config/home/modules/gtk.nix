@@ -1,5 +1,5 @@
-# GTK apps follow the desktop: the names in ../theme.json (Colloid dark, Colloid
-# icons and cursor, Inter). The themes are installed system-wide by Ansible, so no
+# GTK apps follow the desktop: the names in ../theme.json (Colloid dark, Papirus
+# icons, Colloid cursor, Inter). The themes are installed system-wide by Ansible, so no
 # packages here.
 let
   theme = builtins.fromJSON (builtins.readFile ../theme.json);
