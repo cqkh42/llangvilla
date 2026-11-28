@@ -39,6 +39,7 @@
   ansible.builtin.command: pacman -Q qt6-base qt6-declarative libplasma layer-shell-qt
   register: plasma_widgets_build_deps
   changed_when: false
+  check_mode: false   # read-only; a dry run needs the versions too, or the stamp differs
 
 - name: Note Panel Colorizer's build stamp
   ansible.builtin.set_fact:

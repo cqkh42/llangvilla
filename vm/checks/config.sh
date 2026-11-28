@@ -46,7 +46,7 @@ stale_styles() {
     n=$(zcat -f "$f" | grep -c '\.ColorScheme-Background *{')
     (( n > 1 )) && { echo "$f"; bad=1; }
   done < <(find "/usr/share/plasma/desktoptheme/$PLASMA" -name '*.svg*' -print0)
-  return $bad
+  return "$bad"
 }
 check "Plasma style: one colour stylesheet per SVG" stale_styles
 # Colloid's style icons are left out, so the tray draws Papirus's (decision 30).
